@@ -1,0 +1,2187 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1e8">
+<title>Sonified 6×6 Sudoku</title>
+<script>
+// Apply a saved colour scheme before first paint; storage is optional.
+try {
+  const savedTheme = JSON.parse(localStorage.getItem("sonified6x6sudoku.preferences.v2.2") || localStorage.getItem("sonified6x6sudoku.preferences.v2.1") || localStorage.getItem("sonified6x6sudoku.preferences.v2") || "null");
+  if (savedTheme && savedTheme.version === 2 && ["system", "light", "dark"].includes(savedTheme.theme)) {
+    document.documentElement.dataset.theme = savedTheme.theme;
+  }
+} catch (_) { /* Follow the device colour scheme when storage is unavailable. */ }
+</script>
+<style>
+    :root {
+      color-scheme: light;
+      --cell-bg: #ffffff;
+      --primary-ink: #ffffff;
+      --page: #f4f1e8;
+      --panel: rgba(255, 255, 255, 0.84);
+      --panel-solid: #fffdf8;
+      --text: #18211d;
+      --muted: #5d6963;
+      --line: #d7ddd8;
+      --board-line: #24384a;
+      --thin-line: #66756e;
+      --accent: #196c58;
+      --accent-strong: #0d4f40;
+      --accent-soft: #d7ebe4;
+      --cursor: #c5492d;
+      --given-bg: #e8eeeb;
+      --entry-bg: #e2f2ec;
+      --entry-ink: #0d5c4b;
+      --focus: #2476d2;
+      --shadow: 0 16px 50px rgba(41, 52, 46, 0.11);
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      min-height: 100%;
+      background: var(--page);
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% -12%, rgba(78, 154, 129, 0.18), transparent 34rem),
+        var(--page);
+      padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(26px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+
+    button, input, select { font: inherit; }
+    button, select, input[type="range"], input[type="checkbox"] { touch-action: manipulation; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    a:focus-visible,
+    .cell:focus-visible,
+    summary:focus-visible,
+    .board-shell:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    .app {
+      width: min(1580px, 100%);
+      margin: 0 auto;
+    }
+
+    .app-layout {
+      display: grid;
+      grid-template-columns: minmax(310px, 365px) minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .left-rail {
+      position: sticky;
+      top: 14px;
+      max-height: calc(100vh - 28px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      padding: 17px;
+    }
+
+    .rail-header {
+      display: grid;
+      gap: 9px;
+      margin: 0 0 14px;
+      border-bottom: 1px solid var(--line);
+      padding: 1px 1px 14px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent-strong);
+      font-size: 0.76rem;
+      font-weight: 850;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.72rem, 3vw, 2.2rem);
+      letter-spacing: -0.04em;
+      line-height: 1.03;
+    }
+
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .badge {
+      justify-self: start;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: var(--muted);
+      background: var(--panel-solid);
+      font-size: 0.76rem;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .status-card {
+      margin: 0 0 13px;
+      border: 1px solid var(--accent);
+      border-left-width: 5px;
+      border-radius: 13px;
+      padding: 11px 12px;
+      background: color-mix(in srgb, var(--accent-soft) 70%, var(--panel-solid));
+    }
+
+    @supports not (background: color-mix(in srgb, white 50%, black)) {
+      .status-card { background: var(--accent-soft); }
+    }
+
+    .status-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--accent-strong);
+      font-size: 0.72rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #statusText {
+      display: block;
+      min-height: 2.9em;
+      color: var(--text);
+      font-size: 0.84rem;
+      font-weight: 690;
+      line-height: 1.45;
+    }
+
+    .rail-section,
+    .rail-disclosure {
+      margin: 13px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: color-mix(in srgb, var(--panel-solid) 91%, transparent);
+    }
+
+    @supports not (background: color-mix(in srgb, white 50%, black)) {
+      .rail-section,
+      .rail-disclosure { background: var(--panel-solid); }
+    }
+
+    .rail-section-heading,
+    .rail-disclosure > summary {
+      margin: 0;
+      color: var(--text);
+      font-size: 0.93rem;
+      font-weight: 850;
+      letter-spacing: -0.01em;
+      line-height: 1.35;
+    }
+
+    .rail-section-heading {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px 10px;
+    }
+
+    .rail-disclosure > summary {
+      display: flex;
+      align-items: center;
+      min-height: 46px;
+      padding: 10px 12px;
+      cursor: pointer;
+    }
+
+    .rail-disclosure[open] > summary {
+      border-bottom: 1px solid var(--line);
+      color: var(--accent-strong);
+    }
+
+    .rail-section-body,
+    .rail-disclosure-body {
+      min-width: 0;
+      padding: 10px 12px 12px;
+    }
+
+    .controls {
+      display: block;
+    }
+
+    .toggle-group {
+      display: grid;
+      gap: 0;
+    }
+
+    .toggle {
+      display: grid;
+      grid-template-columns: 29px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-height: 48px;
+      border-top: 1px solid var(--line);
+      padding: 9px 0;
+      font-size: 0.86rem;
+      font-weight: 740;
+      line-height: 1.35;
+      cursor: pointer;
+    }
+
+    .toggle:first-of-type {
+      border-top: 0;
+      padding-top: 2px;
+    }
+
+    .toggle input {
+      width: 27px;
+      height: 27px;
+      margin: 0;
+      accent-color: var(--accent-strong);
+    }
+
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 11px;
+    }
+
+    button {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 9px 11px;
+      color: var(--text);
+      background: var(--panel-solid);
+      font-weight: 780;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button.primary {
+      border-color: var(--accent-strong);
+      color: var(--primary-ink);
+      background: var(--accent-strong);
+    }
+
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { cursor: progress; opacity: 0.65; }
+
+    @media (hover: hover) and (pointer: fine) {
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+      button.primary:hover:not(:disabled) { background: var(--accent); }
+      button:active:not(:disabled) { transform: translateY(1px); }
+    }
+
+    .volume-group {
+      display: grid;
+      gap: 12px;
+    }
+
+    .volume-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 3.5rem;
+      align-items: center;
+      gap: 6px 9px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .volume-control + .volume-control {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .volume-control label {
+      grid-column: 1 / -1;
+      font-size: 0.86rem;
+      font-weight: 760;
+      line-height: 1.35;
+    }
+
+    .volume-control input[type="range"] {
+      width: 100%;
+      height: 46px;
+      margin: 0;
+      accent-color: var(--accent-strong);
+      cursor: pointer;
+    }
+
+    .volume-control output {
+      min-width: 3.5rem;
+      color: var(--accent-strong);
+      font-size: 0.84rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 850;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .key-list {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+    }
+
+    .key-row {
+      display: grid;
+      grid-template-columns: minmax(6.6rem, auto) minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+    }
+
+    .key-row p,
+    .rail-copy,
+    .rail-footer-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.48;
+    }
+
+    .rail-copy + .rail-copy { margin-top: 9px; }
+
+    kbd {
+      display: inline-block;
+      min-width: 27px;
+      border: 1px solid var(--line);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      padding: 2px 6px;
+      color: var(--text);
+      background: var(--panel-solid);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+      font: 700 0.72rem/1.25 "Segoe UI", system-ui, sans-serif;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .rail-footer-note {
+      margin: 14px 3px 1px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .workspace {
+      min-width: 0;
+    }
+
+    .board-panel {
+      min-width: 0;
+      padding: clamp(16px, 2.3vw, 28px);
+    }
+
+    .board-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 2px 16px;
+    }
+
+    .board-heading h2 {
+      margin: 0;
+      font-size: clamp(1.25rem, 2.4vw, 1.65rem);
+      letter-spacing: -0.025em;
+    }
+
+    .board-heading p {
+      max-width: 620px;
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .board-focus-badge {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: var(--accent-strong);
+      background: var(--panel-solid);
+      font-size: 0.76rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .board-frame {
+      display: grid;
+      place-items: center;
+      min-height: min(72vh, 790px);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: clamp(12px, 2.4vw, 28px);
+      background: var(--panel-solid);
+    }
+
+    .board-stack {
+      display: grid;
+      justify-items: center;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .board-shell {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      grid-template-rows: repeat(6, 1fr);
+      width: min(100%, 47rem, 72vh);
+      aspect-ratio: 1;
+      border-radius: 5px;
+      background: var(--cell-bg);
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .cell {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      border: 0;
+      border-right: 1px solid var(--thin-line);
+      border-bottom: 1px solid var(--thin-line);
+      color: var(--text);
+      background: var(--cell-bg);
+      font-size: clamp(1.55rem, 4.8vw, 3.35rem);
+      font-weight: 650;
+      line-height: 1;
+      cursor: pointer;
+      transition: background-color 110ms ease, box-shadow 110ms ease;
+    }
+
+    .cell[data-row="0"],
+    .cell[data-row="2"],
+    .cell[data-row="4"] { border-top: 4px solid var(--board-line); }
+
+    .cell[data-row="5"] { border-bottom: 4px solid var(--board-line); }
+
+    .cell[data-col="0"],
+    .cell[data-col="3"] { border-left: 4px solid var(--board-line); }
+
+    .cell[data-col="5"] { border-right: 4px solid var(--board-line); }
+
+    .cell.given {
+      background: var(--given-bg);
+      font-weight: 850;
+    }
+
+    .cell.user-entry {
+      color: var(--entry-ink);
+      background: var(--entry-bg);
+      font-weight: 600;
+      font-style: italic;
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 0.12em;
+    }
+
+    .cell.current {
+      z-index: 2;
+      box-shadow: inset 0 0 0 5px var(--cursor), inset 0 0 0 7px var(--cell-bg);
+    }
+
+    /* Display modes conceal pixels, not controls: every cell keeps its size,
+       accessible label and keyboard/touch behaviour. Suppress clue/entry shading
+       and underlines too, so hidden numbers cannot be inferred from styling. */
+    .board-shell.numbers-hidden .cell {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      background: var(--cell-bg) !important;
+      text-shadow: none !important;
+      text-decoration: none !important;
+      transition: none !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .board-shell.grid-hidden { background: transparent; }
+    .board-shell.grid-hidden .cell {
+      border-color: transparent !important;
+      background: transparent !important;
+    }
+    /* A container-focus outline must not draw an extra grid-shaped boundary. */
+    .board-shell.grid-hidden:focus,
+    .board-shell.grid-hidden:focus-visible { outline: none !important; }
+    /* Explicit audio-only choice. Opacity hides every rendered cell indicator,
+       including browser/forced-colour highlights, without blurring or disabling
+       the grid. Never replace this with display:none or aria-hidden. */
+    .board-shell.cursor-hidden {
+      opacity: 0 !important;
+      outline: none !important;
+      box-shadow: none !important;
+      cursor: default !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .board-shell.cursor-hidden .cell,
+    .board-shell.cursor-hidden .cell:focus,
+    .board-shell.cursor-hidden .cell:focus-visible {
+      outline: none !important;
+      box-shadow: none !important;
+      cursor: default !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .grid-focus-cue {
+      display: none;
+      margin: 8px 0 0;
+      padding: 4px 10px;
+      color: var(--accent-strong);
+      border: 2px solid currentColor;
+      border-radius: 6px;
+      font-size: .82rem;
+      font-weight: 750;
+      line-height: 1.4;
+    }
+    .board-shell.cursor-hidden ~ .grid-focus-cue {
+      display: block;
+      visibility: hidden;
+    }
+    .board-shell.cursor-hidden:focus-within ~ .grid-focus-cue {
+      visibility: visible;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px 16px;
+      width: 100%;
+      margin-top: 15px;
+      color: var(--muted);
+      font-size: 0.83rem;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border: 1px solid rgba(36, 56, 74, 0.3);
+      border-radius: 3px;
+    }
+
+    .swatch.given { background: var(--given-bg); }
+    .swatch.entry { background: var(--entry-bg); }
+    .swatch.cursor {
+      background: var(--cell-bg);
+      box-shadow: inset 0 0 0 3px var(--cursor);
+    }
+
+    .spatial-key {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 7px 15px;
+      width: 100%;
+      margin-top: 13px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    @media (max-width: 1080px) {
+      .app-layout {
+        grid-template-columns: minmax(290px, 330px) minmax(0, 1fr);
+        gap: 16px;
+      }
+      .left-rail { padding: 14px; }
+      .board-frame { min-height: min(68vh, 720px); }
+    }
+
+    @media (max-width: 900px) {
+      .app-layout { grid-template-columns: 1fr; }
+      .left-rail {
+        position: static;
+        max-height: none;
+        overflow: visible;
+      }
+      .board-frame { min-height: auto; }
+      .board-shell { width: min(100%, 42rem); }
+    }
+
+    @media (max-width: 620px) {
+      body { padding-left: 10px; padding-right: 10px; }
+      .card { border-radius: 16px; }
+      .board-panel { padding: 11px; }
+      .board-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .board-focus-badge { white-space: normal; }
+      .board-frame { border-radius: 13px; padding: 8px; }
+      .key-row { grid-template-columns: 1fr; gap: 4px; }
+      .cell { font-size: clamp(1.35rem, 10vw, 2.4rem); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      button:active { transform: none; }
+    }
+
+    @media (forced-colors: active) {
+      .card,
+      .rail-section,
+      .rail-disclosure,
+      .board-frame,
+      .status-card,
+      button,
+      input { forced-color-adjust: auto; }
+      .cell.current { outline: 4px solid Highlight; outline-offset: -6px; }
+    }
+  
+    /* Accessibility revision: explicit themes, full input alternatives and native focus. */
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --page: #111b16; --panel: #1c2923; --panel-solid: #1c2923;
+      --text: #f0f6f2; --muted: #b6c4ba; --line: #62766a;
+      --board-line: #d6e8df; --thin-line: #819a8c;
+      --accent: #79d6b7; --accent-strong: #8ddbbe; --accent-soft: #234a3a;
+      --cursor: #ffa782; --given-bg: #304338; --entry-bg: #203f33;
+      --entry-ink: #a9eed1; --focus: #94c7ff; --cell-bg: #17241e;
+      --primary-ink: #10251c; --shadow: 0 16px 50px rgba(0,0,0,.25);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="system"] {
+        color-scheme: dark;
+        --page: #111b16; --panel: #1c2923; --panel-solid: #1c2923;
+        --text: #f0f6f2; --muted: #b6c4ba; --line: #62766a;
+        --board-line: #d6e8df; --thin-line: #819a8c;
+        --accent: #79d6b7; --accent-strong: #8ddbbe; --accent-soft: #234a3a;
+        --cursor: #ffa782; --given-bg: #304338; --entry-bg: #203f33;
+        --entry-ink: #a9eed1; --focus: #94c7ff; --cell-bg: #17241e;
+        --primary-ink: #10251c; --shadow: 0 16px 50px rgba(0,0,0,.25);
+      }
+    }
+    [hidden] { display: none !important; }
+    .quick-actions .full-width { grid-column: 1 / -1; }
+    [data-sidebar-text][tabindex="0"] { cursor: pointer; scroll-margin: 15px; border-radius: 4px; }
+    [data-sidebar-text]:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    #readKeyboardHelp { margin-bottom: 3px; }
+    #welcomeNotice { font-weight: 500; }
+    #welcomeTranscript { overflow-wrap: anywhere; }
+    a { color: var(--accent-strong); text-underline-offset: .2em; }
+    .skip-link {
+      position: absolute; top: 8px; left: 8px; z-index: 20;
+      transform: translateY(-200%); padding: 13px 18px;
+      background: var(--panel-solid); border: 2px solid var(--focus); border-radius: 8px;
+    }
+    .skip-link:focus { transform: none; }
+    button, select { border-color: var(--thin-line); }
+    button[aria-disabled="true"] { opacity: .65; cursor: default; }
+    button[aria-disabled="true"]:hover { transform: none; }
+    select {
+      display: block; width: 100%; min-width: 0; min-height: 48px;
+      color: var(--text); background: var(--panel-solid);
+      border: 1px solid var(--thin-line); border-radius: 9px; padding: 9px 7px;
+      font-size: .87rem;
+    }
+    .field { display: grid; gap: 7px; margin-bottom: 13px; }
+    .field > label { font-size: .87rem; font-weight: 780; }
+    .help { margin: 0; color: var(--muted); font-size: .79rem; line-height: 1.48; }
+    .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .quick-actions button { font-size: .84rem; }
+    .rail-header { margin-bottom: 12px; }
+    .badge { white-space: normal; }
+    .left-rail { overscroll-behavior: auto; }
+    .board-heading { flex-wrap: wrap; align-items: center; gap: 10px; }
+    .board-heading p { max-width: 37rem; }
+    .board-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .board-tools button { width: auto; font-size: .85rem; }
+    .board-frame { min-height: 0; overflow: visible; padding: clamp(7px, 1.5vw, 18px); }
+    .board-shell { width: min(100%, 42rem, 65vh); min-width: 276px; scroll-margin: 14px; }
+    .board-row { display: contents; }
+    .cell { scroll-margin: 16px; }
+    .cell:focus-visible { outline-offset: -4px; z-index: 3; }
+    .cell.user-entry { font-weight: 600; font-style: italic; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: .12em; }
+    .board-status { width: 100%; margin: 12px 0 0; padding: 10px 12px; border-left: 4px solid var(--accent); border-radius: 6px; background: var(--accent-soft); }
+    .board-status .status-label { display: inline; margin-right: 7px; }
+    #statusText { display: inline; min-height: 0; font-weight: 650; font-size: .87rem; }
+    .legend { gap: 7px 14px; margin-top: 10px; }
+    .swatch { display: inline-grid; place-items: center; width: 25px; height: 27px; border-color: var(--thin-line); color: var(--text); font-size: 1.15rem; line-height: 1; }
+    .swatch.given { font-weight: 850; }
+    .swatch.entry { font-style: italic; font-weight: 600; text-decoration: underline; text-underline-offset: .1em; }
+    .keypad { width: 100%; max-width: 42rem; margin-top: 17px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .keypad h3 { margin: 0 0 5px; font-size: 1rem; }
+    .keypad .help { margin-bottom: 10px; }
+    .keypad-numbers { display: grid; grid-template-columns: repeat(6, minmax(46px,1fr)); gap: 7px; }
+    .keypad-numbers button { min-height: 49px; font-size: 1.3rem; }
+    .keypad-actions { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 7px; margin-top: 9px; }
+    .keypad-actions button { font-size: .85rem; padding: 8px 5px; }
+    .movement-pad { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; margin-top: 9px; }
+    .movement-pad button { font-size: .82rem; padding: 7px 4px; }
+    .keypad-history { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; margin-top: 9px; }
+    .keypad-history button { font-size: .84rem; }
+    .volume-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+    .volume-buttons button { font-size: .85rem; }
+    .speech-speed-control { margin-bottom: 13px; }
+    .speech-speed-control input[type="range"] { height: 48px; }
+    .speech-speed-control .help { margin-top: 5px; }
+    .volume-target { margin: 14px 0 0; border-top: 1px solid var(--line); padding-top: 12px; }
+    .rail-footer-note { overflow-wrap: anywhere; }
+    .end-note { text-align: center; margin: 15px 0 3px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+    .end-note a { display: inline-block; padding: 12px; min-height: 46px; }
+    @media (max-width: 900px) {
+      .board-shell { width: min(100%,42rem); }
+      .board-frame { min-height: 0; }
+    }
+    @media (max-width: 620px) {
+      body { padding-left: 8px; padding-right: 8px; }
+      .board-panel { padding: 6px; }
+      .board-heading { padding: 4px; margin: 0 0 10px; }
+      .board-frame { padding: 3px; min-width: 0; }
+      .board-shell { min-width: 276px; }
+      .board-status { padding: 9px 7px; }
+      .keypad-numbers { grid-template-columns: repeat(3,minmax(0,1fr)); }
+      .keypad { margin-top: 13px; }
+      .keypad-history { grid-template-columns: repeat(3,minmax(0,1fr)); }
+      .spatial-key { font-size: .74rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      button:hover, button:active { transform: none !important; }
+    }
+    @media (forced-colors: active) {
+      select, .board-status { forced-color-adjust: auto; }
+      .cell { border-color: CanvasText; }
+      .cell.current { box-shadow: none; outline: 4px solid Highlight; outline-offset: -6px; }
+      .cell:focus-visible { outline: 3px solid Highlight; outline-offset: -4px; }
+      .board-shell.numbers-hidden .cell {
+        forced-color-adjust: none;
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+        background: Canvas !important;
+        border-color: CanvasText;
+      }
+      .board-shell.numbers-hidden .cell.current,
+      .board-shell.numbers-hidden .cell:focus-visible {
+        outline: 3px solid Highlight;
+        outline-offset: -4px;
+      }
+      .board-shell.grid-hidden .cell { border-color: transparent !important; background: transparent !important; }
+      .grid-focus-cue { color: Highlight; border-color: Highlight; }
+      .swatch.cursor { box-shadow: none; outline: 3px solid Highlight; outline-offset: -5px; }
+    }
+
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#board" id="skipToBoard">Skip to Sudoku board</a>
+  <main class="app">
+    <div class="app-layout">
+      <aside class="card left-rail" id="controlRail" aria-label="Sudoku options and instructions">
+        <header class="rail-header">
+          <h1>Sonified 6×6 Sudoku</h1>
+          <p class="lede">Fill each row, column and 2×3 box with the numbers 1 to 6. Explore with spatial notes, your screen reader or the on-screen controls.</p>
+          <span class="badge">6×6 grid · 2×3 boxes · no time limit</span>
+          <div class="quick-actions">
+            <button type="button" id="goToBoard" class="primary">Go to board</button>
+            <button type="button" id="stopAudio">Stop audio</button>
+            <button type="button" id="playWelcome" class="full-width">Replay welcome</button>
+          </div>
+          <p class="help" id="welcomeNotice">Welcome speech will start when the browser permits it. Replay welcome plays it again; Stop audio stops it.</p>
+        </header>
+
+        <details class="rail-disclosure" id="keyboardHelp">
+          <summary id="keyboardHelpSummary">Keyboard control</summary>
+          <div class="rail-disclosure-body">
+            <button type="button" id="readKeyboardHelp">Read keyboard controls</button>
+            <p class="help" style="margin:9px 0">Use the button to hear the full controls. Stop audio ends the reading. Optional sidebar text reading is available under Built-in voice options.</p>
+            <p class="rail-copy" style="margin-bottom:12px">Entry, movement and reading commands apply only while the board or a cell has keyboard focus. Escape also works from the controls when its focus-switching option is on.</p>
+            <div class="key-list">
+              <div class="key-row"><div><kbd>↑ ↓ ← →</kbd></div><p>Move one cell. Edges block movement; there is no wrapping.</p></div>
+              <div class="key-row"><div><kbd>1</kbd> to <kbd>6</kbd></div><p>Enter or replace your number.</p></div>
+              <div class="key-row"><div><kbd>0</kbd> <kbd>Delete</kbd> <kbd>Backspace</kbd></div><p>Clear your entry. Fixed clues stay locked.</p></div>
+              <div class="key-row"><div><kbd>R</kbd> or <kbd>Space</kbd></div><p>Repeat the selected cell.</p></div>
+              <div class="key-row"><div><kbd>C</kbd></div><p>Read the row and column coordinates.</p></div>
+              <div class="key-row"><div><kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></div><p>Read the row, column or 2×3 box, respectively.</p></div>
+              <div class="key-row"><div><kbd>I</kbd> or <kbd>V</kbd></div><p>Select instrument or tone volume. Then use plus (+), minus (−), or Shift plus Up/Down. There is no timeout.</p></div>
+              <div class="key-row"><div><kbd>Shift</kbd> + <kbd>↑ / ↓</kbd></div><p>Adjust the last-selected volume by five percentage points. No letter shortcut is required.</p></div>
+              <div class="key-row"><div><kbd>Home</kbd> <kbd>End</kbd></div><p>First or last cell in the current row. With Control, first or last cell of the board.</p></div>
+              <div class="key-row"><div><kbd>Ctrl</kbd> + <kbd>Z / Y</kbd></div><p>Undo or redo while the board is focused. The on-screen buttons do the same.</p></div>
+              <div class="key-row"><div><kbd>Tab</kbd> <kbd>Shift + Tab</kbd></div><p>Follow the normal page order; Tab leaves the board for the keypad. There is no looping or key trap.</p></div>
+              <div class="key-row"><div><kbd>Space</kbd> <kbd>Enter</kbd></div><p>Space toggles a focused checkbox. Space or Enter activates a focused button.</p></div>
+              <div class="key-row"><div><kbd>Escape</kbd></div><p>Switch between the selected grid cell and this Keyboard control heading. “Grid active” or “Sidebar active” is spoken first. This shortcut is on by default and can be turned off in Keyboard and screen-reader setup.</p></div>
+            </div>
+            <details class="rail-disclosure" id="welcomeTranscriptSection">
+              <summary>Welcome message text</summary>
+              <div class="rail-disclosure-body"><p class="rail-copy" id="welcomeTranscript"></p></div>
+            </details>
+          </div>
+        </details>
+
+        <section class="rail-section controls" aria-label="Puzzle and display settings">
+          <div class="rail-section-body">
+            <div class="field">
+              <label for="displayMode">Board display</label>
+              <select id="displayMode" aria-describedby="displayModeHelp">
+                <option value="full" selected>Show everything</option>
+                <option value="numbers-hidden">Hide numbers</option>
+                <option value="grid-hidden">Hide numbers and grid</option>
+                <option value="all-hidden">Hide numbers, grid and cursor</option>
+              </select>
+              <p class="help" id="displayModeHelp">Numbers, grid lines and the selection cursor are visible.</p>
+            </div>
+            <div class="field" style="margin-top: 9px">
+              <label for="theme">Colour scheme</label>
+              <select id="theme"><option value="system">Follow device setting</option><option value="light">Light</option><option value="dark">Dark</option></select>
+            </div>
+            <div class="button-group">
+              <button id="newPuzzle" class="primary" type="button">Generate random puzzle</button>
+              <button id="resetPuzzle" type="button">Reset entries</button>
+            </div>
+            <p class="help" style="margin-top:9px">Undo below the board restores entries, resets and previous puzzles during this session. Reloading the page starts a fresh session.</p>
+          </div>
+        </section>
+
+        <details class="rail-disclosure" id="speechOptions">
+          <summary>Built-in voice options</summary>
+          <div class="rail-disclosure-body">
+            <div class="field">
+              <label for="announcementMode">Announcement mode</label>
+              <select id="announcementMode" aria-describedby="announcementHelp">
+                <option value="self" selected>Self-voicing — built-in voice</option>
+                <option value="screenreader">Screen reader — use your own</option>
+                <option value="off">Off — no page announcements</option>
+              </select>
+              <p class="help" id="announcementHelp">The built-in voice is on by default, including when you use a screen reader. Choose “Screen reader” to use only your own reader, or “Off” for no page announcements. Tones are controlled separately.</p>
+            </div>
+            <p class="help" id="storageNotice" style="margin-bottom:13px">Preferences are saved in this browser when local storage is available.</p>
+            <div class="speech-speed-control">
+              <div class="volume-control">
+                <label for="speechSpeed">Speaking speed</label>
+                <input id="speechSpeed" type="range" min="50" max="200" step="5" value="100" aria-describedby="speechSpeedHelp">
+                <output id="speechSpeedValue" for="speechSpeed" aria-live="off">100%</output>
+              </div>
+              <p class="help" id="speechSpeedHelp">50% is slower; 200% is faster. 100% is the normal pace. Adjust in 5% steps; with self-voicing on, the new setting is spoken at the selected speed. Tones and your own screen reader are unchanged.</p>
+            </div>
+            <div class="toggle-group">
+              <label class="toggle" for="welcomeOnStartup"><input type="checkbox" id="welcomeOnStartup" checked aria-describedby="welcomeStartupHelp"><span>Speak welcome on startup</span></label>
+              <label class="toggle" for="speakSidebarText"><input type="checkbox" id="speakSidebarText" aria-describedby="sidebarTextHelp"><span>Read sidebar text when tabbing</span></label>
+              <label class="toggle" for="alwaysCoordinates"><input type="checkbox" id="alwaysCoordinates"><span>Always speak coordinates</span></label>
+              <label class="toggle" for="speakEmpty"><input type="checkbox" id="speakEmpty"><span>Speak “empty” for empty cells</span></label>
+              <label class="toggle" for="fullCellSpeech"><input type="checkbox" id="fullCellSpeech"><span>Identify fixed clues and entries</span></label>
+            </div>
+            <p class="help" id="welcomeStartupHelp">The welcome is on by default in self-voicing mode. If automatic speech is blocked, it starts on your first interaction. Escape takes priority; Stop audio cancels it. Replay welcome is always available.</p>
+            <p class="help" id="sidebarTextHelp" style="margin-top:9px">Off by default. Enable to include sidebar headings, help paragraphs and keyboard instructions in the Tab order and read them with the built-in voice. Press Enter or Space to repeat focused text. In other announcement modes, these extra Tab stops are removed.</p>
+            <p class="help" style="margin-top:9px">Automatic coordinate speech is off by default. Press C on the board or use the Coordinates button to hear your position on request. Coordinate and cell-description options affect self-voicing only. Screen-reader cell labels always include row, column, value and clue or entry state, even when the grid is hidden. Built-in speech is independent of tone volume.</p>
+            <div class="field" style="margin-top:13px;margin-bottom:0">
+              <label class="toggle" for="edgeMessages"><input type="checkbox" id="edgeMessages" aria-describedby="edgeMessagesHelp"><span>Show and announce edge messages</span></label>
+              <p class="help" id="edgeMessagesHelp">Off by default: only the boundary sound plays when you try to move beyond an edge. Enable for visible edge messages and announcements in the selected mode. Number readings and entry-error messages are unchanged.</p>
+            </div>
+          </div>
+        </details>
+
+        <details class="rail-disclosure" id="volumeSection">
+          <summary>Volume and sound cues</summary>
+          <div class="rail-disclosure-body">
+            <div class="volume-group">
+              <div class="volume-control">
+                <label for="instrumentVolume">Row-note instrument volume</label>
+                <input id="instrumentVolume" type="range" min="0" max="100" step="5" value="60" aria-describedby="instrumentHelp">
+                <output id="instrumentVolumeValue" for="instrumentVolume" aria-live="off">60%</output>
+                <span id="instrumentHelp" class="sr-only">Adjusts the pentatonic row note only. Other cues and speech are unaffected.</span>
+              </div>
+              <div class="volume-control">
+                <label for="mainVolume">Tone volume</label>
+                <input id="mainVolume" type="range" min="0" max="100" step="5" value="100" aria-describedby="toneHelp">
+                <output id="mainVolumeValue" for="mainVolume" aria-live="off">100%</output>
+                <span id="toneHelp" class="sr-only">Adjusts all generated tones, including the row note. Zero silences tones but does not mute the built-in voice or your screen reader.</span>
+              </div>
+            </div>
+            <div class="field volume-target">
+              <label for="volumeTarget">Volume adjustment target</label>
+              <select id="volumeTarget"><option value="main">Tone volume</option><option value="instrument">Row-note instrument</option></select>
+              <p class="help">The buttons below and Shift plus Up or Down on the board adjust this volume. The choice has no timeout.</p>
+            </div>
+            <div class="volume-buttons">
+              <button type="button" id="volumeDown" aria-label="Decrease selected volume by five percentage points"><span aria-hidden="true">−</span> Decrease</button>
+              <button type="button" id="volumeUp" aria-label="Increase selected volume by five percentage points"><span aria-hidden="true">+</span> Increase</button>
+            </div>
+            <div class="toggle-group" style="margin-top:9px">
+              <label class="toggle" for="boxCue"><input id="boxCue" type="checkbox" checked><span>Tick when crossing a box boundary</span></label>
+            </div>
+            <p class="help">“Stop audio” stops the current sounds and built-in reading. To keep everything silent, set Tone volume to 0 and Announcement mode to Off.</p>
+          </div>
+        </details>
+
+        <details class="rail-disclosure" id="accessibilitySection">
+          <summary>Keyboard and screen-reader setup</summary>
+          <div class="rail-disclosure-body">
+            <div class="field">
+              <label for="focusMode">Board focus</label>
+              <select id="focusMode" aria-describedby="focusModeHelp">
+                <option value="cell">Individual cells (recommended)</option>
+                <option value="container">Grid container (active descendant)</option>
+              </select>
+              <p class="help" id="focusModeHelp">Individual cells receive real keyboard focus, with one cell in the Tab order. The alternative keeps focus on the grid. Try individual cells if your reader does not follow the selected square.</p>
+            </div>
+            <label class="toggle" for="letterShortcuts"><input id="letterShortcuts" type="checkbox" checked><span>Enable board letter shortcuts</span></label>
+            <p class="help">Letters and plus/minus shortcuts work only while the board is focused. Turn them off for speech input. Number entry, arrows, Shift plus Up/Down and the keypad remain available.</p>
+            <label class="toggle" for="escapeFocusSwitch" style="margin-top:9px"><input id="escapeFocusSwitch" type="checkbox" checked aria-describedby="escapeFocusHelp"><span>Use Escape to switch board and controls</span></label>
+            <p class="help" id="escapeFocusHelp">Escape switches between the selected grid cell and the Keyboard control heading at the top of the sidebar. “Grid active” or “Sidebar active” is announced first. Turn this shortcut off to leave Escape to your browser or screen reader. Tab always follows the normal page order.</p>
+            <p class="help" style="margin-top:9px">Your screen reader may need focus or interaction mode to send keys to the grid. In browse mode, letters may navigate the page instead. Alternatively, activate a cell and use the labelled keypad buttons.</p>
+          </div>
+        </details>
+
+
+
+        <details class="rail-disclosure">
+          <summary>INFORMATION: How the audio works</summary>
+          <div class="rail-disclosure-body">
+            <p class="rail-copy">Moving upward raises the row note; downward lowers it. Columns pan from left to right. With self-voicing, automatic coordinate speech is off by default. Press C on the board, use the Coordinates button, or enable Always speak coordinates to hear your position. Screen-reader labels always give both coordinates.</p>
+            <p class="rail-copy">An edge gives a centred mid-pitched double tap. Edge messages are off by default; enable Show and announce edge messages under Built-in voice options to also receive text and spoken feedback in the selected announcement mode. Crossing between 2×3 boxes gives a short tick when enabled. A rising blip confirms an entry; a descending pair marks a clear. A rough descending pair marks a blocked action; the message explains why.</p>
+            <p class="rail-copy">Row, column and box readings list six values, saying “blank” for empty cells. Screen-reader mode sends requested readings to a polite live region; self-voicing uses the built-in voice. Off makes no page announcement. The visible status displays the reading only when numbers are visible.</p>
+            <p class="rail-copy">The welcome attempts to play on startup; if the browser requires interaction, it starts after your first key press or click. Tones start only after interaction. Built-in speech uses short chunks at your selected speaking speed and prefers a local English voice. The browser’s available voices may vary.</p>
+          </div>
+        </details>
+
+        <details class="rail-disclosure">
+          <summary>INFORMATION: Puzzles, undo and privacy</summary>
+          <div class="rail-disclosure-body">
+            <p class="rail-copy">Random puzzles are generated inside this page. Clues are removed only while the solver finds exactly one solution. Locally legal guesses are allowed; only immediate row, column or box conflicts are blocked.</p>
+            <p class="rail-copy">Undo and Redo retain up to 100 changes in this session, including resets and whole-puzzle replacements. They have no time limit. Preferences are unaffected by undo. Reloading clears puzzle history.</p>
+            <p class="rail-copy">Board display offers four modes: show everything; hide numbers; hide numbers and grid; or hide numbers, grid and cursor. Whenever numbers are hidden, clue and entry shading is also removed, and the visible status line does not reveal cell values or coordinates. Fully hidden mode removes all cell highlights, including the blue keyboard-focus outline. A separate “Grid active” indicator shows when the board has focus without revealing a cell. Screen-reader labels, keyboard navigation and requested audio readings remain available in every mode. Sidebar and keypad focus indicators remain visible.</p>
+            <p class="rail-copy">Preferences, including the announcement and focus modes, are stored only in this browser when permitted. Local-file and private-browsing storage may be unavailable or may not survive closing the browser.</p>
+            <p class="rail-copy">The page has no external assets or upload code. A browser-provided network speech voice may send its utterance text to the browser’s speech service; use a local voice or avoid self-voicing when that matters.</p>
+          </div>
+        </details>
+        <p class="rail-footer-note">Self-contained. No account, analytics or puzzle uploads.</p>
+      </aside>
+
+      <div class="workspace">
+        <section class="card board-panel" aria-labelledby="boardHeading">
+          <div class="board-heading">
+            <div>
+              <h2 id="boardHeading">Sudoku board</h2>
+              <p id="boardHelp">Arrow keys move. Use 1 to 6 to enter a number, or use the keypad below. Escape switches board and controls; Tab follows the normal page order.</p>
+            </div>
+            <div class="board-tools">
+              <button type="button" id="goToOptions">Options</button>
+              <button type="button" id="goToHelp">Keyboard help</button>
+            </div>
+          </div>
+          <div class="board-frame">
+            <div class="board-stack">
+              <div id="board" class="board-shell" role="grid" aria-label="Six by six Sudoku" aria-describedby="boardHelp" aria-rowcount="6" aria-colcount="6" tabindex="-1"></div>
+              <div class="board-status"><span class="status-label">Status</span><span id="statusText">Board ready. Select a cell, use Go to board, or press Escape to begin.</span></div>
+              <p id="gridFocusCue" class="grid-focus-cue" aria-hidden="true">Grid active</p>
+              <div class="legend" id="boardLegend" aria-label="Visual legend">
+                <span class="legend-item"><span class="swatch given" aria-hidden="true">4</span>Fixed: bold</span>
+                <span class="legend-item"><span class="swatch entry" aria-hidden="true">4</span>Entry: italic, underlined</span>
+                <span class="legend-item"><span class="swatch cursor" aria-hidden="true"></span>Selected</span>
+              </div>
+              <section class="keypad" aria-labelledby="keypadHeading">
+                <h3 id="keypadHeading">On-screen keypad</h3>
+                <p class="help" id="keypadHelp">Select a square or use the move buttons. Entries and readings apply to that cell. Keypad buttons keep focus when activated.</p>
+                <div class="keypad-numbers" role="group" aria-label="Enter a number in the selected cell">
+                  <button type="button" data-number="1" aria-label="Enter 1">1</button>
+                  <button type="button" data-number="2" aria-label="Enter 2">2</button>
+                  <button type="button" data-number="3" aria-label="Enter 3">3</button>
+                  <button type="button" data-number="4" aria-label="Enter 4">4</button>
+                  <button type="button" data-number="5" aria-label="Enter 5">5</button>
+                  <button type="button" data-number="6" aria-label="Enter 6">6</button>
+                </div>
+                <div class="keypad-actions" role="group" aria-label="Selected cell actions">
+                  <button type="button" id="clearCell">Clear</button>
+                  <button type="button" id="repeatCell">Repeat cell</button>
+                  <button type="button" id="readCoordinates">Coordinates</button>
+                  <button type="button" id="readRow">Read row</button>
+                  <button type="button" id="readColumn">Read column</button>
+                  <button type="button" id="readBox">Read box</button>
+                </div>
+                <div class="movement-pad" role="group" aria-label="Move the selected cell">
+                  <button type="button" data-move="left" aria-label="Move left"><span aria-hidden="true">←</span> Left</button>
+                  <button type="button" data-move="up" aria-label="Move up"><span aria-hidden="true">↑</span> Up</button>
+                  <button type="button" data-move="down" aria-label="Move down"><span aria-hidden="true">↓</span> Down</button>
+                  <button type="button" data-move="right" aria-label="Move right"><span aria-hidden="true">→</span> Right</button>
+                </div>
+                <div class="keypad-history" role="group" aria-label="History and focus">
+                  <button type="button" id="undo" aria-disabled="true">Undo</button>
+                  <button type="button" id="redo" aria-disabled="true">Redo</button>
+                  <button type="button" id="backToBoard">Back to board</button>
+                </div>
+              </section>
+              <div class="spatial-key" aria-hidden="true"><span>Pitch: bottom low → top high</span><span>Stereo: left → right</span><span>Entry: rising blip · box boundary: tick</span></div>
+            </div>
+          </div>
+        </section>
+        <p class="end-note">Take your time. <a href="#controlRail" id="optionsLink">Return to options</a></p>
+      </div>
+    </div>
+    <!-- Only this region is live. The visible status and its label are deliberately not live. -->
+    <div id="liveStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <noscript><p>This puzzle needs JavaScript enabled. No puzzle information is uploaded.</p></noscript>
+  </main>
+
+<script>
+"use strict";
+
+/* Sonified 6×6 Sudoku — accessibility revision 2.10.
+   Built-in speech is the default; automatic coordinate speech and edge messages are off by default.
+   Escape switches board/control focus unless disabled.
+   No dependencies or uploads. Other commands remain scoped to the focused grid.
+   The original Sudoku solver/generator is retained below. */
+const SIZE = 6, BOX_ROWS = 2, BOX_COLS = 3, FULL_MASK = (1 << SIZE) - 1;
+const ROW_FREQUENCIES = [523.25, 440, 392, 329.63, 293.66, 261.63];
+const COLUMN_PANS = [-.90, -.54, -.18, .18, .54, .90];
+const VOLUME_STEP = 5, HISTORY_LIMIT = 100;
+const DEFAULT_SPEECH_RATE = 1.176; // New 100% equals the previous 120%: 0.98 * 1.20.
+const SPEECH_SPEED_BASELINE_VERSION = 2; // Persist choices against this recalibrated scale.
+const SPEECH_SPEED_MIN = 50, SPEECH_SPEED_MAX = 200, SPEECH_SPEED_STEP = 5;
+// The transcript preserves the requested wording; only dimensions and key symbols
+// are expanded when passed to the voice, so “6x6” is pronounced “6 by 6”.
+const WELCOME_MESSAGE = "Welcome to Sonified 6x6 Sudoku. This game has built-in voicing, so please turn off your screen reader. Within the Sudoku grid, you can use the arrow keys to move around and number keys to place down numbers. The keys \"A\", \"S\", and \"D\" read out the contents of your current row, column, or 2x3 box. Press the Escape key to switch between the grid and the sidebar control. Use Tab to jump between items. For full controls, please refer to the 'Keyboard control' section.";
+// Import previous settings once, except the former automatic-coordinate default.
+// Explicit choices made in V2.2 onward are remembered normally. A direct V2 import
+// retains V2.1's migration to built-in speech enabled by default.
+// Later revisions keep this compatible settings key without resetting previous choices.
+// Missing edgeMessages / speakSidebarText default to false, speechSpeed to 100%,
+// and welcomeOnStartup to true. V2.7 adds displayMode, migrating the old
+// showGrid/showCursor flags conservatively: a hidden cursor maps to all-hidden.
+const PREFERENCE_KEY = "sonified6x6sudoku.preferences.v2.2";
+const PREVIOUS_PREFERENCE_KEY = "sonified6x6sudoku.preferences.v2.1";
+const LEGACY_PREFERENCE_KEY = "sonified6x6sudoku.preferences.v2";
+const INITIAL_PUZZLE = [
+  [3,0,0,6,0,0], [0,4,0,2,3,0], [6,0,4,0,0,0],
+  [0,0,0,4,0,3], [0,2,3,0,5,0], [0,0,1,0,0,2]
+];
+const $ = id => document.getElementById(id);
+const boardElement = $("board"), statusText = $("statusText"), liveStatus = $("liveStatus");
+const cellElements = [];
+let puzzleTemplate = cloneGrid(INITIAL_PUZZLE), board = cloneGrid(INITIAL_PUZZLE);
+let fixedCells = puzzleTemplate.map(row => row.map(Boolean));
+let cursorRow = 0, cursorCol = 0, generationNumber = 0, completed = false, generating = false;
+let undoStack = [], redoStack = [];
+let audioContext = null, audioUnavailable = false, userActivated = false;
+let preferredVoice = null, voiceListenerInstalled = false;
+let speechTimer = null, speechToken = 0, ownsSpeech = false;
+let speechJob = null, deferredSpeech = null, interactionSerial = 0;
+let welcomeState = "pending", welcomeGestureAttempted = false;
+const sidebarTextElements = [];
+let liveTimer = null, internalFocus = false, lastInputKind = "", pendingPointerCell = null;
+const activeSounds = new Set();
+const booleanPreferences = ["alwaysCoordinates", "speakEmpty", "fullCellSpeech", "boxCue", "letterShortcuts", "escapeFocusSwitch", "edgeMessages", "welcomeOnStartup", "speakSidebarText"];
+const selectPreferences = {
+  announcementMode: ["self","screenreader","off"], theme: ["system","light","dark"],
+  focusMode: ["cell","container"], volumeTarget: ["main","instrument"],
+  displayMode: ["full","numbers-hidden","grid-hidden","all-hidden"]
+};
+
+function cloneGrid(grid) { return grid.map(row => row.slice()); }
+function boxIndex(row, col) { return Math.floor(row/BOX_ROWS)*(SIZE/BOX_COLS)+Math.floor(col/BOX_COLS); }
+function clueCount(grid) { return grid.reduce((n,row) => n+row.filter(Boolean).length,0); }
+function mode() { return $("announcementMode").value; }
+function isBoardFocused() { return boardElement === document.activeElement || boardElement.contains(document.activeElement); }
+function coordinates() { return `Row ${cursorRow+1}, column ${cursorCol+1}`; }
+function cellDetailedDescription(row=cursorRow,col=cursorCol) {
+  const value=board[row][col];
+  return fixedCells[row][col] ? `${value}, fixed clue` : value ? `${value}, entered` : "empty";
+}
+function cellAriaLabel(row=cursorRow,col=cursorCol) { return `Row ${row+1}, column ${col+1}, ${cellDetailedDescription(row,col)}`; }
+function cellSpeechContents() {
+  const parts=[];
+  if ($("alwaysCoordinates").checked) parts.push(coordinates());
+  const value=board[cursorRow][cursorCol];
+  if (value) parts.push($("fullCellSpeech").checked ? cellDetailedDescription() : String(value));
+  else if ($("speakEmpty").checked) parts.push("empty");
+  return parts.join(". ");
+}
+function cellEventSpeech(prefix) {
+  const contents=cellSpeechContents();
+  return contents ? `${prefix} ${contents}.` : prefix;
+}
+function setAttributeIfChanged(element, name, value) {
+  const text=String(value);
+  if (element.getAttribute(name)!==text) element.setAttribute(name,text);
+}
+
+/* Preferences contain settings only, never a puzzle or history. Storage failure is non-fatal. */
+function storageWarning() {
+  $("storageNotice").textContent="Preferences cannot be saved here. Your choices work for this session; choose your announcement mode again after reloading.";
+}
+function restorePreferences() {
+  try {
+    const current=localStorage.getItem(PREFERENCE_KEY);
+    const importingPrevious=current===null;
+    const previous=importingPrevious ? localStorage.getItem(PREVIOUS_PREFERENCE_KEY):null;
+    const importingV2=importingPrevious && previous===null;
+    const saved=JSON.parse(current || previous || (importingV2 ? localStorage.getItem(LEGACY_PREFERENCE_KEY):null) || "null");
+    if (!saved || saved.version!==2) return;
+    for (const id of booleanPreferences) {
+      if (importingPrevious && id==="alwaysCoordinates") continue;
+      if (typeof saved[id]==="boolean") $(id).checked=saved[id];
+    }
+    for (const [id,values] of Object.entries(selectPreferences)) {
+      if (importingV2 && id==="announcementMode") continue;
+      if (values.includes(saved[id])) $(id).value=saved[id];
+    }
+    const migratingDisplay=!selectPreferences.displayMode.includes(saved.displayMode);
+    if (migratingDisplay) {
+      // Never reveal a previously hidden cursor. The old combination of visible
+      // numbers + hidden cursor maps to all-hidden in the four-mode selector.
+      $("displayMode").value=saved.showCursor===false ? "all-hidden" : saved.showGrid===false ? "grid-hidden" : "full";
+    }
+    for (const id of ["mainVolume","instrumentVolume"]) {
+      if (typeof saved[id]==="number" && Number.isFinite(saved[id])) $(id).value=String(clampPercent(saved[id]));
+    }
+    const migratingSpeechSpeed=saved.speechSpeedBaseline!==SPEECH_SPEED_BASELINE_VERSION;
+    if (migratingSpeechSpeed) {
+      // Apply the requested new normal once; do not compound an older saved percentage.
+      // All other preferences above retain their usual restoration/migration behaviour.
+      $("speechSpeed").value="100";
+    } else if (typeof saved.speechSpeed==="number" && Number.isFinite(saved.speechSpeed)) {
+      $("speechSpeed").value=String(clampSpeechSpeed(saved.speechSpeed));
+    }
+    if (importingPrevious || migratingDisplay || migratingSpeechSpeed) savePreferences();
+  } catch (_) { storageWarning(); }
+}
+function savePreferences() {
+  const saved={version:2};
+  for (const id of booleanPreferences) saved[id]=$(id).checked;
+  for (const id of Object.keys(selectPreferences)) saved[id]=$(id).value;
+  for (const id of ["mainVolume","instrumentVolume"]) saved[id]=clampPercent($(id).value);
+  saved.speechSpeed=clampSpeechSpeed($("speechSpeed").value);
+  saved.speechSpeedBaseline=SPEECH_SPEED_BASELINE_VERSION;
+  // Compatibility for earlier HTML copies: conceal at least as much as V2.7.
+  saved.showGrid=numbersVisible();
+  saved.showCursor=$("displayMode").value!=="all-hidden";
+  try { localStorage.setItem(PREFERENCE_KEY,JSON.stringify(saved)); }
+  catch (_) { storageWarning(); }
+}
+function applyTheme() {
+  document.documentElement.dataset.theme=$("theme").value;
+  const dark=$("theme").value==="dark" || ($("theme").value==="system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+  document.querySelector('meta[name="theme-color"]').content=dark ? "#111b16" : "#f4f1e8";
+}
+
+/* One output router. Plain grid movement never writes the live region.
+   A keypad move does need a live message because DOM focus stays on the button. */
+function clearLive() {
+  clearTimeout(liveTimer); liveTimer=null;
+  if (liveStatus.textContent) liveStatus.textContent="";
+}
+function publishLive(message) {
+  if (mode()!=="screenreader" || !message) return;
+  clearTimeout(liveTimer);
+  // Permit a repeated blocked-action/read request without adding visible counters or a second live region.
+  if (liveStatus.textContent===message) liveStatus.textContent="";
+  liveTimer=window.setTimeout(() => {
+    liveTimer=null;
+    if (mode()==="screenreader") liveStatus.textContent=message;
+  },60);
+}
+function report(message, {live=true, liveText=message, speech=message, delay=70, sensitive=false, hiddenText="Action completed. Numbers are visually hidden."}={}) {
+  const visible=sensitive && !numbersVisible() ? hiddenText : message;
+  if (statusText.textContent!==visible) statusText.textContent=visible;
+  if (live) publishLive(liveText);
+  if (mode()==="self") scheduleSpeech(speech,delay);
+}
+
+/* A single cancellable speech stream. Startup welcome is the only playback allowed
+   to attempt synthesis before interaction. Screen reader and Off never call speak.
+   Focus-switch prefixes are protected until their first utterance finishes; only
+   the latest subsequent reading is retained, avoiding an obsolete speech backlog. */
+function cancelPageSpeech() {
+  clearTimeout(speechTimer); speechTimer=null; speechToken+=1;
+  const previous=speechJob;
+  speechJob=null; deferredSpeech=null;
+  if (ownsSpeech && "speechSynthesis" in window) {
+    try { window.speechSynthesis.cancel(); } catch (_) { /* Speech may already be closed. */ }
+  }
+  ownsSpeech=false;
+  previous?.onCancel?.();
+}
+function normaliseSpokenText(text) {
+  // Speech-only pronunciation hint for the quoted A key; visible text is unchanged.
+  return String(text || "")
+    .replace(/"A"/g,"ay")
+    .replace(/(\d)\s*[x×]\s*(\d)/gi,"$1 by $2")
+    .replace(/↑/g," up ").replace(/↓/g," down ")
+    .replace(/←/g," left ").replace(/→/g," right ")
+    .replace(/\bCtrl\b/g,"Control").replace(/\+/g," plus ")
+    .replace(/−/g," minus ").replace(/\//g," or ")
+    .replace(/\s+/g," ").replace(/\s+([.,;!?])/g,"$1").trim();
+}
+function loadVoices() {
+  if (mode()!=="self" || !("speechSynthesis" in window)) return;
+  const voices=window.speechSynthesis.getVoices();
+  preferredVoice=voices.find(v=>v.localService && /^en[-_]GB$/i.test(v.lang)) ||
+    voices.find(v=>v.localService && /^en(?:[-_]|$)/i.test(v.lang)) ||
+    voices.find(v=>/^en[-_]GB$/i.test(v.lang)) || voices.find(v=>/^en(?:[-_]|$)/i.test(v.lang)) || null;
+}
+function speechChunks(text, limit=140) {
+  const chunks=[];
+  for (const sentence of String(text).trim().match(/[^.!?;]+[.!?;]?/g) || []) {
+    let chunk="";
+    for (const word of sentence.trim().split(/\s+/)) {
+      if (chunk && chunk.length+word.length+1>limit) { chunks.push(chunk); chunk=""; }
+      chunk+=(chunk ? " " : "")+word;
+    }
+    if (chunk) chunks.push(chunk);
+  }
+  return chunks;
+}
+function clampSpeechSpeed(value) {
+  const number=Number(value);
+  if (!Number.isFinite(number)) return 100;
+  return Math.max(SPEECH_SPEED_MIN,Math.min(SPEECH_SPEED_MAX,Math.round(number/SPEECH_SPEED_STEP)*SPEECH_SPEED_STEP));
+}
+function updateSpeechSpeedDisplay() {
+  const value=clampSpeechSpeed($("speechSpeed").value);
+  $("speechSpeed").value=String(value);
+  setAttributeIfChanged($("speechSpeed"),"aria-valuetext",`${value} percent of normal speaking speed`);
+  $("speechSpeedValue").value=`${value}%`;
+  $("speechSpeedValue").textContent=`${value}%`;
+  return value;
+}
+function scheduleSpeech(text,delay=100,options={}) {
+  if (mode()!=="self") return false;
+  const kind=options.kind || "normal";
+  if (kind==="normal" && speechJob) {
+    const keepWelcome=speechJob.kind==="welcome" && interactionSerial<=speechJob.protectedInteraction;
+    const keepFocus=speechJob.kind==="focus" && !speechJob.firstFinished;
+    if (keepWelcome || keepFocus) {
+      deferredSpeech={text,delay,options};
+      return false;
+    }
+  }
+  cancelPageSpeech();
+  if (!text || (!userActivated && !options.autoplay)) return false;
+  if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+    statusText.textContent="Built-in speech is unavailable in this browser. Use your screen reader or the visible status; tones are separate.";
+    options.onError?.("unavailable");
+    return false;
+  }
+  try { loadVoices(); } catch (_) { /* The browser default voice is still usable. */ }
+  if (!voiceListenerInstalled) {
+    window.speechSynthesis.addEventListener?.("voiceschanged",loadVoices);
+    voiceListenerInstalled=true;
+  }
+  const token=speechToken;
+  const chunkLimit=Math.min(140,Math.max(65,Math.round(140*clampSpeechSpeed($("speechSpeed").value)/100)));
+  const chunks=speechChunks(normaliseSpokenText(text),chunkLimit);
+  if (!chunks.length) return false;
+  const job={kind,firstFinished:false,started:false,utterance:null,
+    protectedInteraction:interactionSerial+(userActivated ? 0:1),onCancel:options.onCancel};
+  speechJob=job;
+  let index=0;
+  const finish=()=> {
+    if (token!==speechToken) return;
+    const pending=deferredSpeech;
+    deferredSpeech=null; speechJob=null; ownsSpeech=false;
+    options.onComplete?.();
+    // A completion handler may have started another intentional reading.
+    if (!speechJob && pending && mode()==="self") scheduleSpeech(pending.text,pending.delay,pending.options);
+  };
+  const failed=reason=> {
+    if (token!==speechToken) return;
+    speechJob=null; ownsSpeech=false; deferredSpeech=null;
+    if (options.onError) options.onError(reason);
+    else statusText.textContent="The built-in voice could not start. Try Replay welcome, or use your screen reader and the visible controls.";
+  };
+  const next=()=> {
+    speechTimer=null;
+    if (token!==speechToken || mode()!=="self" || speechJob!==job) return;
+    if (index>=chunks.length) { finish(); return; }
+    const utterance=new SpeechSynthesisUtterance(chunks[index]);
+    job.utterance=utterance; // Retain a live reference until this chunk completes.
+    utterance.lang="en-GB";
+    utterance.rate=DEFAULT_SPEECH_RATE*clampSpeechSpeed($("speechSpeed").value)/100;
+    utterance.pitch=1; utterance.volume=1;
+    if (preferredVoice) utterance.voice=preferredVoice;
+    utterance.onstart=()=> {
+      if (token!==speechToken) return;
+      if (!job.started) { job.started=true; options.onStart?.(); }
+    };
+    utterance.onend=()=> {
+      if (token!==speechToken || mode()!=="self") return;
+      job.utterance=null;
+      if (index===0) {
+        job.firstFinished=true; options.onFirstEnd?.();
+        // The new action supersedes stale cell/control details, but not “Grid active”.
+        if (kind==="focus" && deferredSpeech) { finish(); return; }
+      }
+      index+=1;
+      if (index>=chunks.length) finish();
+      else speechTimer=window.setTimeout(next,25);
+    };
+    utterance.onerror=event=>failed(event.error || "synthesis-failed");
+    ownsSpeech=true;
+    try { window.speechSynthesis.speak(utterance); }
+    catch (error) { failed(error.name==="NotAllowedError" ? "not-allowed":"synthesis-failed"); }
+  };
+  // For a gesture-triggered welcome or focus prefix, submit synchronously: focus
+  // changes cannot cancel the prefix and transient browser activation is retained.
+  if (delay<=0) next(); else speechTimer=window.setTimeout(next,delay);
+  return true;
+}
+function welcomeNotice(message) { $("welcomeNotice").textContent=message; }
+function welcomePending() { return welcomeState==="pending" || (welcomeState==="attempting" && !speechJob?.started); }
+function playWelcome({autoplay=false}={}) {
+  if (mode()!=="self") {
+    welcomeState="disabled";
+    welcomeNotice("Choose Self-voicing to hear the welcome. Its full text is in Keyboard control.");
+    if (!autoplay) report("The welcome uses the built-in voice. Choose Self-voicing to hear it; the text is in Keyboard control.",{speech:""});
+    return;
+  }
+  cancelPageSpeech();
+  welcomeState="attempting";
+  welcomeNotice("Starting the welcome. Stop audio cancels it; Escape switches focus.");
+  scheduleSpeech(WELCOME_MESSAGE,0,{
+    kind:"welcome",autoplay,
+    onStart:()=> { welcomeState="speaking"; welcomeNotice("Welcome playing. Stop audio cancels it; Escape switches focus."); },
+    onComplete:()=> { welcomeState="complete"; welcomeNotice("Welcome finished. Use Replay welcome to hear it again."); },
+    onCancel:()=> { welcomeState="stopped"; welcomeNotice("Welcome stopped. Replay welcome starts it again."); },
+    onError:reason=> {
+      if (reason==="not-allowed") {
+        welcomeState="pending";
+        welcomeNotice("Your browser has not allowed speech yet. Press a key or activate Replay welcome to begin. Stop audio skips the welcome.");
+      } else {
+        welcomeState="unavailable";
+        welcomeNotice("The built-in voice could not play. Keep your screen reader available; welcome text and full instructions are in Keyboard control. Replay welcome retries.");
+      }
+    }
+  });
+}
+function initialiseWelcome() {
+  if (mode()!=="self" || !$("welcomeOnStartup").checked) {
+    welcomeState="disabled";
+    welcomeNotice(mode()==="self" ? "Startup welcome is off. Replay welcome is available." : "The built-in voice is silent in this mode. Welcome text is in Keyboard control.");
+    return;
+  }
+  if (document.hidden) return; // Do not start talking from a background tab.
+  playWelcome({autoplay:true});
+}
+function tryWelcomeAfterGesture(event) {
+  if (welcomeGestureAttempted || !welcomePending() || !$("welcomeOnStartup").checked || mode()!=="self") return;
+  const target=event.target instanceof Element ? event.target:null;
+  if (target?.closest('#stopAudio,#playWelcome,#announcementMode,#welcomeOnStartup,#readKeyboardHelp')) return;
+  // Escape must announce its destination FIRST, including on the very first key press.
+  if (event.type==="keydown" && event.key==="Escape" && $("escapeFocusSwitch").checked) return;
+  welcomeGestureAttempted=true;
+  playWelcome();
+}
+
+function controlSpeech(control) {
+  let name=control.getAttribute("aria-label") || (control.labels?.length ? [...control.labels].map(l=>l.textContent).join(" ") : control.textContent);
+  name=String(name || "").replace(/\s+/g," ").trim();
+  if (control.matches('input[type="checkbox"]')) return `${name}. ${control.checked ? "Checked" : "Not checked"}.`;
+  if (control.matches('input[type="range"]')) return `${name}. ${control.value} percent.`;
+  if (control.matches("select")) return `${name}. ${control.selectedOptions[0]?.textContent || ""}.`;
+  if (control.matches("summary")) return `${name}. ${control.parentElement.open ? "Expanded" : "Collapsed"}.`;
+  if (control.matches("a[href]")) return `${name}. Link.`;
+  return `${name}. ${control.getAttribute("aria-disabled")==="true" ? "Unavailable" : "Button"}.`;
+}
+
+/* Optional text reading: add native Tab stops only in self-voicing mode and
+   only when requested. No application role, virtual cursor, or Tab interception. */
+function sidebarTextSpeech(element) {
+  if (element.classList.contains("key-row")) {
+    return normaliseSpokenText(`${element.firstElementChild.textContent}. ${element.querySelector("p").textContent}`);
+  }
+  return normaliseSpokenText(element.innerText || element.textContent);
+}
+function setupSidebarText() {
+  const candidates=$("controlRail").querySelectorAll("h1,h2,p.lede,p.help,p.rail-copy,p.rail-footer-note,.key-row");
+  for (const element of candidates) {
+    if (element.matches("p") && element.closest(".key-row")) continue;
+    element.dataset.sidebarText="true";
+    sidebarTextElements.push(element);
+  }
+  applySidebarTextFocus();
+}
+function applySidebarTextFocus() {
+  const enabled=mode()==="self" && $("speakSidebarText").checked;
+  for (const element of sidebarTextElements) {
+    if (enabled) element.tabIndex=0; else element.removeAttribute("tabindex");
+  }
+}
+function readKeyboardControls() {
+  const intro=$("keyboardHelp").querySelector(".rail-copy").textContent;
+  const text=["Keyboard control.",intro,...[...$("keyboardHelp").querySelectorAll(".key-row")].map(sidebarTextSpeech)].join(" ");
+  report("Reading keyboard controls. Stop audio ends the reading.",{speech:text,liveText:text});
+}
+function switchFocusWithAnnouncement(toGrid) {
+  const heading=toGrid ? "Grid active.":"Sidebar active.";
+  const target=toGrid ? ($("focusMode").value==="cell" ? cellElements[cursorRow][cursorCol]:boardElement):$("keyboardHelpSummary");
+  const pendingWelcome=welcomePending() && $("welcomeOnStartup").checked && mode()==="self" && !welcomeGestureAttempted;
+  const serial=interactionSerial;
+  if (pendingWelcome) welcomeGestureAttempted=true; // Reserve this retry until AFTER the prefix.
+  const skipPendingWelcome=()=> {
+    if (pendingWelcome) { welcomeState="stopped"; welcomeNotice("Welcome skipped. Replay welcome is available."); }
+  };
+  const detail=toGrid ? cellSpeechContents():controlSpeech(target);
+  // No goToBoard()/goToOptions() here: their focus announcements would replace
+  // the required first words. Submit the prefix before moving DOM focus.
+  scheduleSpeech(heading+(detail ? " "+detail:""),0,{
+    kind:"focus",
+    onFirstEnd:()=> { if (toGrid && isBoardFocused()) playCellCue(); },
+    onComplete:()=> {
+      if (pendingWelcome && serial===interactionSerial && mode()==="self" && $("welcomeOnStartup").checked) {
+        playWelcome();
+      } else if (pendingWelcome) skipPendingWelcome();
+    },
+    onCancel:skipPendingWelcome
+  });
+  internalFocus=true;
+  try { target.focus(); } finally { internalFocus=false; }
+  statusText.textContent=heading+(toGrid ? " Use the arrows to explore; Escape returns to the sidebar.":" Keyboard control. Press Escape to return to the selected cell.");
+  clearLive(); publishLive(heading);
+}
+
+/* Audio nodes are tracked so Stop audio really stops pending tones as well as speech. */
+function noteAudioUnavailable() {
+  if (audioUnavailable) return;
+  audioUnavailable=true;
+  const note=document.createElement("p"); note.className="help"; note.id="audioUnavailableNote";
+  note.textContent="Tones are unavailable or blocked in this browser. Cell labels, readings and the visual controls still work.";
+  $("volumeSection").querySelector(".rail-disclosure-body").appendChild(note);
+}
+function ensureAudioContext() {
+  if (!userActivated) return null;
+  const AudioClass=window.AudioContext || window.webkitAudioContext;
+  if (!AudioClass) { noteAudioUnavailable(); return null; }
+  try {
+    if (!audioContext || audioContext.state==="closed") audioContext=new AudioClass();
+    if (audioContext.state==="suspended") audioContext.resume().catch(noteAudioUnavailable);
+    return audioContext;
+  } catch (_) { noteAudioUnavailable(); return null; }
+}
+function routeWithPan(context, source, pan) {
+  if (typeof context.createStereoPanner==="function") {
+    const panner=context.createStereoPanner(); panner.pan.setValueAtTime(pan,context.currentTime);
+    source.connect(panner); panner.connect(context.destination); return panner;
+  }
+  // Without stereo support the note still works; coordinates carry the missing location information.
+  source.connect(context.destination); return null;
+}
+function clampPercent(value) {
+  const number=Number(value);
+  return Number.isFinite(number) ? Math.max(0,Math.min(100,Math.round(number/VOLUME_STEP)*VOLUME_STEP)) : 0;
+}
+function playTone({frequency,pan=0,duration=.13,delay=0,type="sine",volume=.075,instrument=false}) {
+  const level=volume*(clampPercent($("mainVolume").value)/100)*(instrument ? clampPercent($("instrumentVolume").value)/50 : 1);
+  if (level<=0) return;
+  const context=ensureAudioContext(); if (!context) return;
+  try {
+    const start=context.currentTime+delay, oscillator=context.createOscillator(), gain=context.createGain();
+    oscillator.type=type; oscillator.frequency.setValueAtTime(frequency,start);
+    gain.gain.setValueAtTime(.0001,start);
+    gain.gain.exponentialRampToValueAtTime(Math.max(level,.0002),start+.008);
+    gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+    oscillator.connect(gain);
+    const panner=routeWithPan(context,gain,pan);
+    const sound={oscillator,gain,panner}; activeSounds.add(sound);
+    oscillator.onended=()=> {
+      activeSounds.delete(sound);
+      oscillator.disconnect(); gain.disconnect(); panner?.disconnect();
+    };
+    oscillator.start(start); oscillator.stop(start+duration+.025);
+  } catch (_) { noteAudioUnavailable(); }
+}
+function stopTones() {
+  for (const sound of activeSounds) {
+    try { sound.oscillator.stop(); } catch (_) { /* It may already have ended. */ }
+    try { sound.gain.disconnect(); } catch (_) { /* Harmless on older audio implementations. */ }
+  }
+  activeSounds.clear();
+}
+function playCellCue() { playTone({frequency:ROW_FREQUENCIES[cursorRow],pan:COLUMN_PANS[cursorCol],duration:.145,volume:.085,instrument:true}); }
+function playBoxCue() { if ($("boxCue").checked) playTone({frequency:1000,pan:0,duration:.028,volume:.022}); }
+function playEdgeCue() {
+  playTone({frequency:640,pan:0,type:"triangle",duration:.055,volume:.06});
+  playTone({frequency:440,pan:0,type:"triangle",duration:.065,delay:.08,volume:.06});
+}
+function playEntryCue() {
+  playTone({frequency:740,pan:0,duration:.045,delay:.015,volume:.035});
+  playTone({frequency:1046.5,pan:0,duration:.055,delay:.07,volume:.035});
+}
+function playErrorCue() {
+  playTone({frequency:330,pan:0,type:"sawtooth",duration:.075,volume:.03});
+  playTone({frequency:220,pan:0,type:"sawtooth",duration:.095,delay:.085,volume:.03});
+}
+function playClearCue() {
+  playTone({frequency:ROW_FREQUENCIES[cursorRow]*1.12,pan:COLUMN_PANS[cursorCol],duration:.07,volume:.055});
+  playTone({frequency:ROW_FREQUENCIES[cursorRow]*.82,pan:COLUMN_PANS[cursorCol],duration:.09,delay:.065,volume:.05});
+}
+function playSuccessCue() {
+  [523.25,659.25,783.99,880,1046.5].forEach((frequency,index)=>playTone({frequency,pan:-.7+index*.35,duration:.16,delay:index*.105,volume:.06}));
+}
+
+/* Explicit grid -> row -> gridcell structure. Rendering only mutates changed labels/values,
+   avoiding 36 label mutations and replaced text nodes for every arrow press. */
+function buildBoard() {
+  const fragment=document.createDocumentFragment();
+  for (let row=0;row<SIZE;row+=1) {
+    const rowElement=document.createElement("div"); rowElement.className="board-row";
+    rowElement.setAttribute("role","row"); rowElement.setAttribute("aria-rowindex",String(row+1));
+    cellElements[row]=[];
+    for (let col=0;col<SIZE;col+=1) {
+      const cell=document.createElement("div"); cell.className="cell"; cell.id=`cell-${row}-${col}`;
+      cell.dataset.row=String(row); cell.dataset.col=String(col);
+      cell.setAttribute("role","gridcell"); cell.setAttribute("aria-rowindex",String(row+1)); cell.setAttribute("aria-colindex",String(col+1)); cell.tabIndex=-1;
+      cell.addEventListener("click",event=> {
+        pendingPointerCell=null;
+        selectCell(row,col,{focus:true,pointerInitiated:event.detail>0});
+      });
+      cellElements[row][col]=cell; rowElement.appendChild(cell);
+    }
+    fragment.appendChild(rowElement);
+  }
+  boardElement.replaceChildren(fragment);
+}
+function numbersVisible() { return $("displayMode").value==="full"; }
+function displayModeDescription() {
+  const descriptions={
+    "full":"Numbers, grid lines and the selection cursor are visible.",
+    "numbers-hidden":"Numbers and clue shading are hidden. Grid lines and the selection cursor remain visible.",
+    "grid-hidden":"Numbers and grid lines are hidden. Only the selection cursor remains visible on the board.",
+    "all-hidden":"Numbers, grid lines and every cell highlight are hidden, including the keyboard-focus outline. Use audio to explore; Escape switches focus."
+  };
+  return descriptions[$("displayMode").value] || descriptions.full;
+}
+function applyVisibility() {
+  const mode=$("displayMode").value;
+  const hideNumbers=mode!=="full", hideGrid=mode==="grid-hidden" || mode==="all-hidden";
+  boardElement.dataset.displayMode=mode;
+  boardElement.classList.toggle("numbers-hidden",hideNumbers);
+  boardElement.classList.toggle("grid-hidden",hideGrid);
+  boardElement.classList.toggle("cursor-hidden",mode==="all-hidden");
+  $("boardLegend").hidden=hideNumbers;
+  const help=displayModeDescription();
+  if ($("displayModeHelp").textContent!==help) $("displayModeHelp").textContent=help;
+}
+function renderBoard() {
+  const direct=$("focusMode").value==="cell";
+  for (let row=0;row<SIZE;row+=1) for (let col=0;col<SIZE;col+=1) {
+    const cell=cellElements[row][col], value=board[row][col], current=row===cursorRow && col===cursorCol;
+    const text=value ? String(value) : "";
+    if (cell.textContent!==text) cell.textContent=text;
+    cell.classList.toggle("given",fixedCells[row][col]);
+    cell.classList.toggle("user-entry",!!value && !fixedCells[row][col]);
+    cell.classList.toggle("current",current);
+    setAttributeIfChanged(cell,"aria-selected",current ? "true":"false");
+    setAttributeIfChanged(cell,"aria-readonly",fixedCells[row][col] ? "true":"false");
+    setAttributeIfChanged(cell,"aria-label",cellAriaLabel(row,col));
+    const tabIndex=direct && current ? 0:-1;
+    if (cell.tabIndex!==tabIndex) cell.tabIndex=tabIndex;
+  }
+  if (boardElement.tabIndex!==(direct ? -1:0)) boardElement.tabIndex=direct ? -1:0;
+  if (direct) boardElement.removeAttribute("aria-activedescendant");
+  else setAttributeIfChanged(boardElement,"aria-activedescendant",`cell-${cursorRow}-${cursorCol}`);
+  applyVisibility(); updateHistoryButtons();
+}
+function focusBoard({pointerInitiated=false}={}) {
+  const target=$("focusMode").value==="cell" ? cellElements[cursorRow][cursorCol] : boardElement;
+  internalFocus=true;
+  try {
+    // Only direct pointer selection suppresses scroll. Explicit Go/Back to board always reveals the target.
+    if (pointerInitiated) target.focus({preventScroll:true}); else target.focus();
+  } finally { internalFocus=false; }
+}
+function announceCurrentCell({requested=false,external=false}={}) {
+  playCellCue();
+  report(`${cellAriaLabel()}.`,{
+    live:requested || external, speech:cellSpeechContents(),
+    sensitive:true,hiddenText:requested ? "Selected cell repeated. Numbers are visually hidden." : "Cell selected. Numbers are visually hidden."
+  });
+}
+function selectCell(row,col,{focus=false,pointerInitiated=false,external=false}={}) {
+  const oldBox=boxIndex(cursorRow,cursorCol), changed=row!==cursorRow || col!==cursorCol;
+  cursorRow=row; cursorCol=col; renderBoard();
+  if (focus) focusBoard({pointerInitiated});
+  if (changed && oldBox!==boxIndex(row,col)) playBoxCue();
+  announceCurrentCell({external});
+}
+function moveCursor(deltaRow,deltaCol,{external=false}={}) {
+  const nextRow=cursorRow+deltaRow,nextCol=cursorCol+deltaCol;
+  if (nextRow<0 || nextRow>=SIZE || nextCol<0 || nextCol>=SIZE) {
+    playEdgeCue();
+    // The tone is independent of optional text/speech feedback. With the option
+    // off, leave both the visible status and the live region untouched.
+    if ($("edgeMessages").checked) {
+      const edge=nextRow<0 ? "Top" : nextRow>=SIZE ? "Bottom" : nextCol<0 ? "Left" : "Right";
+      report(`${edge} edge. Movement blocked; the cursor did not wrap.`);
+    }
+    return;
+  }
+  selectCell(nextRow,nextCol,{focus:!external && isBoardFocused(),external});
+}
+function sequenceSpeech(cells) { return cells.map(({row,col})=>board[row][col]===0 ? "blank" : String(board[row][col])).join(", "); }
+function readCurrentRow() {
+  const cells=Array.from({length:SIZE},(_,col)=>({row:cursorRow,col}));
+  report(`Row ${cursorRow+1}. ${sequenceSpeech(cells)}.`,{sensitive:true,hiddenText:"Current row reading requested. Numbers are visually hidden."});
+}
+function readCurrentColumn() {
+  const cells=Array.from({length:SIZE},(_,row)=>({row,col:cursorCol}));
+  report(`Column ${cursorCol+1}. ${sequenceSpeech(cells)}.`,{sensitive:true,hiddenText:"Current column reading requested. Numbers are visually hidden."});
+}
+function readCurrentBox() {
+  const firstRow=Math.floor(cursorRow/BOX_ROWS)*BOX_ROWS,firstCol=Math.floor(cursorCol/BOX_COLS)*BOX_COLS;
+  const cells=[];
+  for (let r=firstRow;r<firstRow+BOX_ROWS;r+=1) for (let c=firstCol;c<firstCol+BOX_COLS;c+=1) cells.push({row:r,col:c});
+  report(`Box ${boxIndex(cursorRow,cursorCol)+1}, upper row then lower row. ${sequenceSpeech(cells)}.`,{sensitive:true,hiddenText:"Current box reading requested. Numbers are visually hidden."});
+}
+function readCoordinates() { report(`${coordinates()}.`,{sensitive:true,hiddenText:"Coordinates requested. Numbers are visually hidden."}); }
+
+/* Rules and reversible state changes. New puzzle/reset do not move the user's focus. */
+function conflictFor(row,col,value) {
+  for (let c=0;c<SIZE;c+=1) if (c!==col && board[row][c]===value) return `Blocked. ${value} is already in this row.`;
+  for (let r=0;r<SIZE;r+=1) if (r!==row && board[r][col]===value) return `Blocked. ${value} is already in this column.`;
+  const firstRow=Math.floor(row/BOX_ROWS)*BOX_ROWS, firstCol=Math.floor(col/BOX_COLS)*BOX_COLS;
+  for (let r=firstRow;r<firstRow+BOX_ROWS;r+=1) for (let c=firstCol;c<firstCol+BOX_COLS;c+=1) {
+    if ((r!==row || c!==col) && board[r][c]===value) return `Blocked. ${value} is already in this two by three box.`;
+  }
+  return "";
+}
+function snapshot() {
+  return {puzzle:cloneGrid(puzzleTemplate),board:cloneGrid(board),row:cursorRow,col:cursorCol,generation:generationNumber,completed};
+}
+function pushHistory(label) {
+  undoStack.push({state:snapshot(),label});
+  if (undoStack.length>HISTORY_LIMIT) undoStack.shift();
+  redoStack=[];
+}
+function updateHistoryButtons() {
+  setAttributeIfChanged($("undo"),"aria-disabled",undoStack.length===0 || generating);
+  setAttributeIfChanged($("redo"),"aria-disabled",redoStack.length===0 || generating);
+}
+function restoreState(state) {
+  const focused=isBoardFocused();
+  puzzleTemplate=cloneGrid(state.puzzle); board=cloneGrid(state.board); fixedCells=puzzleTemplate.map(row=>row.map(Boolean));
+  cursorRow=state.row; cursorCol=state.col; generationNumber=state.generation; completed=state.completed;
+  renderBoard(); if (focused) focusBoard();
+}
+function busyGuard() {
+  if (!generating) return false;
+  report("The new puzzle is being checked. This action has not changed your current puzzle."); return true;
+}
+function undoChange() {
+  if (busyGuard()) return;
+  if (!undoStack.length) { report("Nothing to undo in this session."); return; }
+  const change=undoStack.pop(); redoStack.push({state:snapshot(),label:change.label}); restoreState(change.state); playCellCue();
+  const base=`Undid ${change.label}.`, detail=`${base} ${cellAriaLabel()}.`;
+  report(detail,{liveText:isBoardFocused() ? base:detail,speech:cellEventSpeech(base),sensitive:true,hiddenText:`${base} Numbers are visually hidden.`});
+}
+function redoChange() {
+  if (busyGuard()) return;
+  if (!redoStack.length) { report("Nothing to redo in this session."); return; }
+  const change=redoStack.pop(); undoStack.push({state:snapshot(),label:change.label}); restoreState(change.state); playCellCue();
+  const base=`Redid ${change.label}.`, detail=`${base} ${cellAriaLabel()}.`;
+  report(detail,{liveText:isBoardFocused() ? base:detail,speech:cellEventSpeech(base),sensitive:true,hiddenText:`${base} Numbers are visually hidden.`});
+}
+function enterNumber(value) {
+  if (busyGuard()) return;
+  if (!Number.isInteger(value) || value<1 || value>6) { playErrorCue(); report("Blocked. Use a number from 1 to 6."); return; }
+  if (fixedCells[cursorRow][cursorCol]) { playErrorCue(); report("Blocked. Fixed clue. It cannot be changed.",{sensitive:true,hiddenText:"Entry blocked. The hidden puzzle was not changed."}); return; }
+  const conflict=conflictFor(cursorRow,cursorCol,value);
+  if (conflict) { playErrorCue(); report(conflict,{sensitive:true,hiddenText:"Entry blocked by a Sudoku conflict. The hidden puzzle was not changed."}); return; }
+  const previous=board[cursorRow][cursorCol];
+  if (previous===value) { playCellCue(); report(`${value} unchanged.`,{sensitive:true,hiddenText:"The selected entry is unchanged."}); return; }
+  pushHistory(previous===0 ? "number entry":"number replacement");
+  board[cursorRow][cursorCol]=value; completed=false; renderBoard(); playCellCue(); playEntryCue();
+  const action=previous===0 ? `Entered ${value}.`:`Changed ${previous} to ${value}.`;
+  const detail=`${action} ${coordinates()}.`;
+  // An edit does not change the active descendant; announce its action, not another full cell reading.
+  const spoken=$("fullCellSpeech").checked ? action : String(value);
+  report(detail,{liveText:isBoardFocused() ? action:detail,speech:$("alwaysCoordinates").checked ? `${coordinates()}. ${spoken}`:spoken,sensitive:true,hiddenText:"Entry saved in the hidden puzzle. Undo is available."});
+  checkForCompletion();
+}
+function clearCurrentCell() {
+  if (busyGuard()) return;
+  if (fixedCells[cursorRow][cursorCol]) { playErrorCue(); report("Blocked. Fixed clue. It cannot be cleared.",{sensitive:true,hiddenText:"Clear blocked. The hidden puzzle was not changed."}); return; }
+  if (board[cursorRow][cursorCol]===0) { report("Already empty.",{sensitive:true,hiddenText:"Nothing was cleared. Numbers are visually hidden."}); return; }
+  pushHistory("clear"); board[cursorRow][cursorCol]=0; completed=false; renderBoard(); playClearCue();
+  const detail=`Cleared ${coordinates().toLowerCase()}.`;
+  report(detail,{liveText:isBoardFocused() ? "Cleared.":detail,speech:$("alwaysCoordinates").checked ? detail:"Cleared.",sensitive:true,hiddenText:"Selected entry cleared. Numbers are visually hidden."});
+}
+function checkForCompletion() {
+  if (completed || !board.every(row=>row.every(Boolean))) return;
+  if (countSolutions(cloneGrid(board),2)!==1) return;
+  completed=true; playSuccessCue();
+  report("Puzzle complete. Every row, column and two by three box is valid.",{delay:160});
+}
+function resetEntries() {
+  if (busyGuard()) return;
+  const hasEntries=board.some((row,r)=>row.some((value,c)=>value!==puzzleTemplate[r][c]));
+  if (!hasEntries) { report("There are no entries to reset."); return; }
+  pushHistory("reset"); board=cloneGrid(puzzleTemplate); cursorRow=0; cursorCol=0; completed=false;
+  const focused=isBoardFocused(); renderBoard(); if (focused) focusBoard(); playCellCue();
+  report(`Entries reset. Undo restores them. ${cellAriaLabel()}.`,{speech:cellEventSpeech("Entries reset. Undo restores them."),sensitive:true,hiddenText:"Entries reset. Undo restores them. Numbers remain visually hidden."});
+}
+
+    function popcount(mask) {
+      let count = 0;
+      let value = mask;
+      while (value) {
+        value &= value - 1;
+        count += 1;
+      }
+      return count;
+    }
+
+    function countSolutions(grid, limit = 2) {
+      const rowMasks = Array(SIZE).fill(0);
+      const colMasks = Array(SIZE).fill(0);
+      const boxMasks = Array(SIZE).fill(0);
+
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let col = 0; col < SIZE; col += 1) {
+          const value = grid[row][col];
+          if (value === 0) continue;
+          if (value < 1 || value > SIZE) return 0;
+          const bit = 1 << (value - 1);
+          const box = boxIndex(row, col);
+          if ((rowMasks[row] & bit) || (colMasks[col] & bit) || (boxMasks[box] & bit)) return 0;
+          rowMasks[row] |= bit;
+          colMasks[col] |= bit;
+          boxMasks[box] |= bit;
+        }
+      }
+
+      let solutions = 0;
+
+      function search() {
+        if (solutions >= limit) return;
+
+        let bestRow = -1;
+        let bestCol = -1;
+        let bestMask = 0;
+        let bestOptionCount = SIZE + 1;
+
+        for (let row = 0; row < SIZE; row += 1) {
+          for (let col = 0; col < SIZE; col += 1) {
+            if (grid[row][col] !== 0) continue;
+            const box = boxIndex(row, col);
+            const candidates = FULL_MASK & ~(rowMasks[row] | colMasks[col] | boxMasks[box]);
+            const optionCount = popcount(candidates);
+            if (optionCount === 0) return;
+            if (optionCount < bestOptionCount) {
+              bestOptionCount = optionCount;
+              bestRow = row;
+              bestCol = col;
+              bestMask = candidates;
+              if (optionCount === 1) break;
+            }
+          }
+          if (bestOptionCount === 1) break;
+        }
+
+        if (bestRow === -1) {
+          solutions += 1;
+          return;
+        }
+
+        const box = boxIndex(bestRow, bestCol);
+        let candidates = bestMask;
+        while (candidates && solutions < limit) {
+          const bit = candidates & -candidates;
+          const value = Math.log2(bit) + 1;
+          candidates ^= bit;
+
+          grid[bestRow][bestCol] = value;
+          rowMasks[bestRow] |= bit;
+          colMasks[bestCol] |= bit;
+          boxMasks[box] |= bit;
+
+          search();
+
+          rowMasks[bestRow] ^= bit;
+          colMasks[bestCol] ^= bit;
+          boxMasks[box] ^= bit;
+          grid[bestRow][bestCol] = 0;
+        }
+      }
+
+      search();
+      return solutions;
+    }
+
+    function shuffled(values) {
+      const result = values.slice();
+      for (let index = result.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+      }
+      return result;
+    }
+
+    function pattern(row, col) {
+      return (BOX_COLS * (row % BOX_ROWS) + Math.floor(row / BOX_ROWS) + col) % SIZE;
+    }
+
+    function generateSolvedGrid() {
+      const digits = shuffled([1, 2, 3, 4, 5, 6]);
+      const bandOrder = shuffled([0, 1, 2]);
+      const stackOrder = shuffled([0, 1]);
+      const rowOrder = bandOrder.flatMap(band => shuffled([0, 1]).map(offset => band * BOX_ROWS + offset));
+      const colOrder = stackOrder.flatMap(stack => shuffled([0, 1, 2]).map(offset => stack * BOX_COLS + offset));
+
+      return rowOrder.map(row => colOrder.map(col => digits[pattern(row, col)]));
+    }
+
+    function rowClues(grid, row) {
+      return grid[row].filter(Boolean).length;
+    }
+
+    function colClues(grid, col) {
+      let count = 0;
+      for (let row = 0; row < SIZE; row += 1) if (grid[row][col] !== 0) count += 1;
+      return count;
+    }
+
+    function boxClues(grid, row, col) {
+      const firstRow = Math.floor(row / BOX_ROWS) * BOX_ROWS;
+      const firstCol = Math.floor(col / BOX_COLS) * BOX_COLS;
+      let count = 0;
+      for (let checkRow = firstRow; checkRow < firstRow + BOX_ROWS; checkRow += 1) {
+        for (let checkCol = firstCol; checkCol < firstCol + BOX_COLS; checkCol += 1) {
+          if (grid[checkRow][checkCol] !== 0) count += 1;
+        }
+      }
+      return count;
+    }
+
+    function generateUniquePuzzle() {
+      let bestResult = null;
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const solution = generateSolvedGrid();
+        const puzzle = cloneGrid(solution);
+        const targetClues = 14 + Math.floor(Math.random() * 3); // 14–16 clues.
+        const positions = shuffled(Array.from({ length: SIZE * SIZE }, (_, index) => index));
+        let remainingClues = SIZE * SIZE;
+
+        for (const position of positions) {
+          if (remainingClues <= targetClues) break;
+          const row = Math.floor(position / SIZE);
+          const col = position % SIZE;
+
+          // Preserve a useful spread of clues for navigation as well as uniqueness.
+          if (rowClues(puzzle, row) <= 1 || colClues(puzzle, col) <= 1 || boxClues(puzzle, row, col) <= 2) {
+            continue;
+          }
+
+          const previous = puzzle[row][col];
+          puzzle[row][col] = 0;
+          if (countSolutions(cloneGrid(puzzle), 2) === 1) {
+            remainingClues -= 1;
+          } else {
+            puzzle[row][col] = previous;
+          }
+        }
+
+        const result = { puzzle, solution, clues: remainingClues };
+        if (!bestResult || result.clues < bestResult.clues) bestResult = result;
+        if (remainingClues <= targetClues + 1) return result;
+      }
+
+      return bestResult;
+    }
+
+
+
+function makeRandomPuzzle() {
+  if (generating) return;
+  generating=true;
+  setAttributeIfChanged($("newPuzzle"),"aria-disabled",true);
+  $("newPuzzle").setAttribute("aria-busy","true"); $("newPuzzle").textContent="Generating…";
+  updateHistoryButtons(); report("Generating and checking a unique puzzle…");
+  // Let the button repaint; no puzzle state is changed until generation has succeeded.
+  window.setTimeout(()=> {
+    try {
+      const result=generateUniquePuzzle();
+      if (!result || countSolutions(cloneGrid(result.puzzle),2)!==1) throw new Error("Uniqueness check failed");
+      pushHistory("new puzzle");
+      puzzleTemplate=cloneGrid(result.puzzle); board=cloneGrid(result.puzzle); fixedCells=puzzleTemplate.map(row=>row.map(Boolean));
+      generationNumber+=1; cursorRow=0; cursorCol=0; completed=false;
+      const focused=isBoardFocused(); renderBoard(); if (focused) focusBoard(); playCellCue();
+      report(`New uniquely solvable puzzle with ${result.clues} fixed clues. Undo restores the previous puzzle. ${cellAriaLabel()}.`,{speech:cellEventSpeech(`New uniquely solvable puzzle with ${result.clues} fixed clues. Undo restores the previous puzzle.`),sensitive:true,hiddenText:"New uniquely solvable hidden puzzle ready. Undo restores the previous puzzle."});
+    } catch (error) {
+      console.error("Puzzle generation failed",error);
+      report("A new puzzle could not be generated. Your existing puzzle has been kept.");
+    } finally {
+      generating=false; $("newPuzzle").textContent="Generate random puzzle";
+      setAttributeIfChanged($("newPuzzle"),"aria-disabled",false); $("newPuzzle").removeAttribute("aria-busy"); updateHistoryButtons();
+    }
+  },25);
+}
+
+/* Volume selection has no timer, and stays selected across focus changes and reloads. */
+function updateVolumeDisplay(target) {
+  const id=target==="instrument" ? "instrumentVolume":"mainVolume", value=clampPercent($(id).value);
+  $(id).value=String(value); setAttributeIfChanged($(id),"aria-valuetext",`${value} percent`);
+  $(id+"Value").value=`${value}%`; $(id+"Value").textContent=`${value}%`; return value;
+}
+function volumeName(target) { return target==="instrument" ? "Row-note instrument volume":"Tone volume"; }
+function announceVolume(target,{native=false}={}) {
+  const value=updateVolumeDisplay(target); stopTones(); playCellCue();
+  const message=`${volumeName(target)} ${value} percent.${target==="main" && value===0 ? " Tones muted; announcement mode is unchanged.":""}`;
+  report(message,{live:!native,delay:80});
+}
+function chooseVolume(target,{native=false}={}) {
+  $("volumeTarget").value=target; savePreferences();
+  report(`${volumeName(target)} selected. Use plus or minus, or Shift plus Up or Down. No timeout.`,{live:!native});
+}
+function changeVolume(direction) {
+  const target=$("volumeTarget").value, id=target==="instrument" ? "instrumentVolume":"mainVolume";
+  $(id).value=String(clampPercent(Number($(id).value)+direction*VOLUME_STEP)); announceVolume(target); savePreferences();
+}
+
+/* Tab is never intercepted. Letter/number commands are owned only by the focused grid.
+   Escape focus switching is handled separately, in the bubbling phase. */
+function handleBoardKeydown(event) {
+  if (!isBoardFocused() || event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
+  const key=event.key, lower=key.toLowerCase();
+  if (event.ctrlKey) {
+    if (key==="Home" || key==="End") { event.preventDefault(); const index=key==="Home" ? 0:5; selectCell(index,index,{focus:true}); }
+    else if (lower==="z") { event.preventDefault(); event.shiftKey ? redoChange():undoChange(); }
+    else if (lower==="y") { event.preventDefault(); redoChange(); }
+    return;
+  }
+  if (event.shiftKey && (key==="ArrowUp" || key==="ArrowDown")) { event.preventDefault(); changeVolume(key==="ArrowUp" ? 1:-1); return; }
+  const moves={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
+  if (moves[key]) { event.preventDefault(); moveCursor(...moves[key]); return; }
+  if (key==="Home" || key==="End") { event.preventDefault(); selectCell(cursorRow,key==="Home" ? 0:5,{focus:true}); return; }
+  if (["Backspace","Delete","0"].includes(key)) { event.preventDefault(); clearCurrentCell(); return; }
+  if (key===" ") { event.preventDefault(); announceCurrentCell({requested:true}); return; }
+  if (/^[1-9]$/.test(key)) { event.preventDefault(); enterNumber(Number(key)); return; }
+  if (!$("letterShortcuts").checked) return;
+  if (["+","="].includes(key) || event.code==="NumpadAdd") { event.preventDefault(); changeVolume(1); return; }
+  if (["-","−","_"].includes(key) || event.code==="NumpadSubtract") { event.preventDefault(); changeVolume(-1); return; }
+  const commands={r:()=>announceCurrentCell({requested:true}),c:readCoordinates,a:readCurrentRow,s:readCurrentColumn,d:readCurrentBox,i:()=>chooseVolume("instrument"),v:()=>chooseVolume("main")};
+  if (commands[lower]) { event.preventDefault(); commands[lower](); }
+}
+boardElement.addEventListener("keydown",handleBoardKeydown);
+function handleFocusSwitchKeydown(event) {
+  if (event.key!=="Escape" || !$("escapeFocusSwitch").checked || event.defaultPrevented ||
+      event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  // Give already-handled events priority; ignore held-key repeats to avoid oscillating focus.
+  event.preventDefault();
+  if (event.repeat) return;
+  switchFocusWithAnnouncement(!isBoardFocused());
+}
+document.addEventListener("keydown",handleFocusSwitchKeydown);
+// Track interaction and retry blocked startup speech on keydown/click; focus switching runs on bubbling.
+document.addEventListener("keydown",event=> {
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || ["Shift","Control","Alt","Meta"].includes(event.key)) return;
+  userActivated=true; lastInputKind="keyboard"; pendingPointerCell=null;
+  if (!event.repeat) interactionSerial+=1;
+  tryWelcomeAfterGesture(event);
+},true);
+document.addEventListener("pointerdown",event=> {
+  userActivated=true; lastInputKind="pointer"; interactionSerial+=1;
+  // Retry welcome on click, so touch users have completed the activation gesture.
+  pendingPointerCell=event.target instanceof Element ? event.target.closest('#board [role="gridcell"]') : null;
+},true);
+document.addEventListener("pointerup",()=> { window.setTimeout(()=> { pendingPointerCell=null; },0); },true);
+document.addEventListener("pointercancel",()=> { pendingPointerCell=null; },true);
+document.addEventListener("click",event=> {
+  // detail===0 covers assistive-technology and keyboard activation without pointerdown.
+  userActivated=true;
+  if (event.detail===0 && lastInputKind!=="keyboard") interactionSerial+=1;
+  tryWelcomeAfterGesture(event);
+},true);
+document.addEventListener("focusin",event=> {
+  if (internalFocus) return;
+  const target=event.target;
+  if (target===boardElement || (target instanceof Element && target.matches('[role="gridcell"]'))) {
+    // Defer a pointer's selection to its click handler, preserving the previous
+    // box long enough to detect a crossed boundary (native focus precedes click).
+    if (target!==boardElement && target===pendingPointerCell) return;
+    if (target!==boardElement) { cursorRow=Number(target.dataset.row); cursorCol=Number(target.dataset.col); renderBoard(); }
+    // A pointer click announces once in its click handler, not again in the preceding focus event.
+    if (lastInputKind!=="pointer") announceCurrentCell();
+  } else if (mode()==="self" && target instanceof Element) {
+    if (target.matches('[data-sidebar-text]') && $("speakSidebarText").checked) scheduleSpeech(sidebarTextSpeech(target),95);
+    else if (target.matches('button,summary,input,select,a[href]')) scheduleSpeech(controlSpeech(target),95);
+  }
+});
+
+$("announcementMode").addEventListener("change",()=> {
+  cancelPageSpeech(); clearLive();
+  liveStatus.setAttribute("aria-live",mode()==="screenreader" ? "polite":"off");
+  applySidebarTextFocus();
+  if (mode()!=="self") {
+    welcomeState="disabled";
+    welcomeNotice("The built-in voice is silent in this mode. Welcome text is in Keyboard control.");
+  } else {
+    welcomeNotice("Built-in voice enabled. Replay welcome reads the introduction.");
+  }
+  savePreferences();
+  const text=mode()==="self" ? "Self-voicing enabled. Built-in voice and tones have separate controls." : mode()==="screenreader" ? "Screen-reader mode. The built-in voice is silent. Your reader announces cells; extra messages report actions and requested readings." : "Page announcements off. Tones and your screen reader's normal control labels are unaffected.";
+  // The native select already conveys its new value to the user's reader.
+  report(text,{live:false});
+});
+$("speechSpeed").addEventListener("input",()=> {
+  const value=updateSpeechSpeedDisplay();
+  savePreferences();
+  // Replace pending speech rather than queuing every intermediate drag/key value.
+  // The native slider reports its value to screen readers; do not duplicate it live.
+  report(`Speaking speed ${value} percent.`,{live:false,delay:180});
+});
+$("edgeMessages").addEventListener("change",()=> {
+  // Clear any pending edge announcement immediately when the option changes.
+  cancelPageSpeech(); clearLive(); savePreferences();
+  report($("edgeMessages").checked ? "Edge messages on." : "Edge messages off. Boundary sound unchanged.",{live:false});
+});
+const toggleMessages={
+  alwaysCoordinates:()=>`Self-voicing coordinates ${$("alwaysCoordinates").checked ? "on":"off"}. Screen-reader labels still include coordinates.`,
+  speakEmpty:()=>`Self-voicing empty-cell announcements ${$("speakEmpty").checked ? "on":"off"}.`,
+  fullCellSpeech:()=>$("fullCellSpeech").checked ? "Self-voicing identifies fixed clues and entries.":"Self-voicing uses numbers without clue or entry labels.",
+  boxCue:()=>`Box-boundary tick ${$("boxCue").checked ? "on":"off"}.`,
+  letterShortcuts:()=>$("letterShortcuts").checked ? "Letter shortcuts enabled only on the focused board.":"Board letter and plus/minus shortcuts disabled. Arrows, numbers, Shift plus Up or Down, and keypad buttons still work.",
+  escapeFocusSwitch:()=>$("escapeFocusSwitch").checked ? "Escape focus switching on. Press Escape to switch between the board and controls.":"Escape focus switching off. Escape is left to your browser or screen reader. The focus buttons remain available."
+};
+for (const [id,message] of Object.entries(toggleMessages)) $(id).addEventListener("change",()=> {
+  applyVisibility(); savePreferences();
+  report(message(),{live:false});
+});
+$("displayMode").addEventListener("change",()=> {
+  applyVisibility(); savePreferences(); clearLive();
+  // Replace any prior visible cell/sequence report immediately, but do not move
+  // focus, change the puzzle, or alter the selected voice and sound settings.
+  report(`Board display. ${displayModeDescription()}`,{live:false});
+});
+$("theme").addEventListener("change",()=> { applyTheme(); savePreferences(); report(`Colour scheme: ${$("theme").selectedOptions[0].textContent}.`,{live:false}); });
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change",applyTheme);
+$("focusMode").addEventListener("change",()=> { renderBoard(); savePreferences(); report(`Board focus: ${$("focusMode").selectedOptions[0].textContent}. Use Go to board to continue.`,{live:false}); });
+$("volumeTarget").addEventListener("change",()=>chooseVolume($("volumeTarget").value,{native:true}));
+for (const target of ["main","instrument"]) {
+  const id=target==="instrument" ? "instrumentVolume":"mainVolume";
+  $(id).addEventListener("input",()=> { $("volumeTarget").value=target; announceVolume(target,{native:true}); savePreferences(); });
+}
+$("volumeDown").addEventListener("click",()=>changeVolume(-1));
+$("volumeUp").addEventListener("click",()=>changeVolume(1));
+for (const button of document.querySelectorAll("[data-number]")) button.addEventListener("click",()=>enterNumber(Number(button.dataset.number)));
+const directions={left:[0,-1],up:[-1,0],down:[1,0],right:[0,1]};
+for (const button of document.querySelectorAll("[data-move]")) button.addEventListener("click",()=>moveCursor(...directions[button.dataset.move],{external:true}));
+const actions={clearCell:clearCurrentCell,repeatCell:()=>announceCurrentCell({requested:true}),readCoordinates,readRow:readCurrentRow,readColumn:readCurrentColumn,readBox:readCurrentBox,undo:undoChange,redo:redoChange,newPuzzle:makeRandomPuzzle,resetPuzzle:resetEntries};
+for (const [id,action] of Object.entries(actions)) $(id).addEventListener("click",action);
+function goToBoard(event) {
+  event?.preventDefault(); // Cancels only this explicit link/button activation, not a key handler.
+  focusBoard(); announceCurrentCell();
+}
+for (const id of ["skipToBoard","goToBoard","backToBoard"]) $(id).addEventListener("click",goToBoard);
+function goToOptions(event) { event?.preventDefault(); $("keyboardHelpSummary").focus(); }
+for (const id of ["goToOptions","optionsLink"]) $(id).addEventListener("click",goToOptions);
+$("goToHelp").addEventListener("click",()=> { $("keyboardHelp").open=true; $("keyboardHelpSummary").focus(); });
+$("stopAudio").addEventListener("click",()=> {
+  cancelPageSpeech(); stopTones(); clearLive();
+  if (["pending","attempting","speaking"].includes(welcomeState)) {
+    welcomeState="stopped"; welcomeNotice("Welcome skipped. Replay welcome is available.");
+  }
+  report("Current page audio stopped. Future actions can make new sounds.",{speech:""});
+});
+for (const disclosure of document.querySelectorAll("details")) disclosure.addEventListener("toggle",()=> {
+  const summary=disclosure.querySelector("summary");
+  if (mode()==="self" && document.activeElement===summary) scheduleSpeech(controlSpeech(summary),60);
+});
+document.addEventListener("visibilitychange",()=> {
+  if (document.hidden) { cancelPageSpeech(); stopTones(); }
+  else if (welcomeState==="pending" && !userActivated && !welcomeGestureAttempted) initialiseWelcome();
+});
+$("playWelcome").addEventListener("click",()=> { welcomeGestureAttempted=true; playWelcome(); });
+$("readKeyboardHelp").addEventListener("click",()=> {
+  // An explicit help request replaces rather than waits behind the startup greeting.
+  cancelPageSpeech(); readKeyboardControls();
+});
+$("welcomeOnStartup").addEventListener("change",()=> {
+  if (!$("welcomeOnStartup").checked) {
+    if (speechJob?.kind==="welcome") cancelPageSpeech();
+    welcomeState="disabled"; welcomeNotice("Startup welcome is off. Replay welcome is available.");
+  } else {
+    welcomeNotice("Startup welcome is on for your next visit. Replay welcome reads it now.");
+  }
+  savePreferences();
+  report($("welcomeOnStartup").checked ? "Welcome on startup enabled for your next visit. Replay welcome reads it now.":"Welcome on startup disabled. Replay welcome is still available.",{live:false});
+});
+$("speakSidebarText").addEventListener("change",()=> {
+  applySidebarTextFocus(); savePreferences();
+  report($("speakSidebarText").checked ? "Sidebar text reading on. In self-voicing mode, Tab includes headings, help text and keyboard instructions. Enter or Space repeats focused text.":"Sidebar text reading off. Tab visits controls only.",{live:false});
+});
+$("controlRail").addEventListener("keydown",event=> {
+  const target=event.target;
+  if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey ||
+      mode()!=="self" || !$("speakSidebarText").checked || !(target instanceof Element) || !target.matches('[data-sidebar-text]')) return;
+  if (event.key===" " || event.key==="Enter") { event.preventDefault(); scheduleSpeech(sidebarTextSpeech(target),0); }
+});
+$("controlRail").addEventListener("click",event=> {
+  if (mode()!=="self" || !$("speakSidebarText").checked || !(event.target instanceof Element)) return;
+  const target=event.target.closest('[data-sidebar-text]');
+  if (!target || event.target.closest('a,button,input,select,summary')) return;
+  internalFocus=true;
+  try { target.focus(); } finally { internalFocus=false; }
+  scheduleSpeech(sidebarTextSpeech(target),0);
+});
+
+function updateFocusSwitchHelp() {
+  $("boardHelp").textContent="Arrow keys move. Use 1 to 6 to enter a number, or use the keypad below. "+
+    ($("escapeFocusSwitch").checked ? "Escape switches board and controls; Tab follows the normal page order.":"Use Options or Go to board to switch focus. Tab follows the normal page order.");
+}
+$("escapeFocusSwitch").addEventListener("change",updateFocusSwitchHelp);
+restorePreferences(); applyTheme(); updateFocusSwitchHelp();
+if (!$("escapeFocusSwitch").checked) statusText.textContent="Board ready. Select a cell or use Go to board.";
+liveStatus.setAttribute("aria-live",mode()==="screenreader" ? "polite":"off");
+updateVolumeDisplay("main"); updateVolumeDisplay("instrument"); updateSpeechSpeedDisplay();
+buildBoard(); renderBoard();
+$("welcomeTranscript").textContent=WELCOME_MESSAGE;
+setupSidebarText();
+if (countSolutions(cloneGrid(INITIAL_PUZZLE),2)!==1) {
+  report("Configuration error: the supplied starting puzzle is not uniquely solvable.",{speech:""});
+}
+// No autofocus or AudioContext on load. Only the requested welcome attempts speech;
+// unsupported/blocked engines keep the visible page usable and can retry on a gesture.
+initialiseWelcome();
+
+</script>
+</body>
+</html>
