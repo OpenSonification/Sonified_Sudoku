@@ -905,12 +905,16 @@ try {
             <div class="toggle-group">
               <label class="toggle" for="welcomeOnStartup"><input type="checkbox" id="welcomeOnStartup" checked aria-describedby="welcomeStartupHelp"><span>Speak welcome on startup</span></label>
               <label class="toggle" for="speakSidebarText"><input type="checkbox" id="speakSidebarText" aria-describedby="sidebarTextHelp"><span>Read sidebar text when tabbing</span></label>
+              <label class="toggle" for="autoAnnounceNumbers"><input type="checkbox" id="autoAnnounceNumbers" checked aria-describedby="autoAnnounceNumbersHelp"><span>Automatically announce cell numbers</span></label>
+              <label class="toggle" for="repeatAnnounceNumbers"><input type="checkbox" id="repeatAnnounceNumbers" checked aria-describedby="repeatAnnounceNumbersHelp"><span>Announce cell numbers with Space / R</span></label>
               <label class="toggle" for="alwaysCoordinates"><input type="checkbox" id="alwaysCoordinates"><span>Always speak coordinates</span></label>
               <label class="toggle" for="speakEmpty"><input type="checkbox" id="speakEmpty"><span>Speak “empty” for empty cells</span></label>
               <label class="toggle" for="fullCellSpeech"><input type="checkbox" id="fullCellSpeech"><span>Identify fixed clues and entries</span></label>
             </div>
             <p class="help" id="welcomeStartupHelp">The welcome is on by default in self-voicing mode. If automatic speech is blocked, it starts on your first interaction. Escape takes priority; Stop audio cancels it. Replay welcome is always available.</p>
             <p class="help" id="sidebarTextHelp" style="margin-top:9px">Off by default. Enable to include sidebar headings, help paragraphs and keyboard instructions in the Tab order and read them with the built-in voice. Press Enter or Space to repeat focused text. In other announcement modes, these extra Tab stops are removed.</p>
+            <p class="help" id="autoAnnounceNumbersHelp" style="margin-top:9px">On by default. Untick to stop the built-in voice reading numbers when you move to a cell, select it, or return to the grid; the Space / R setting is independent.</p>
+            <p class="help" id="repeatAnnounceNumbersHelp" style="margin-top:9px">On by default. Controls number speech for Space, R and the Repeat cell button, independently of automatic announcements. Both settings leave tones, coordinate and empty-cell options, entry feedback, row/column/box readings and your own screen reader unchanged.</p>
             <p class="help" style="margin-top:9px">Automatic coordinate speech is off by default. Press C on the board or use the Coordinates button to hear your position on request. Coordinate and cell-description options affect self-voicing only. Screen-reader cell labels always include row, column, value and clue or entry state, even when the grid is hidden. Built-in speech is independent of tone volume.</p>
             <div class="field" style="margin-top:13px;margin-bottom:0">
               <label class="toggle" for="edgeMessages"><input type="checkbox" id="edgeMessages" aria-describedby="edgeMessagesHelp"><span>Show and announce edge messages</span></label>
@@ -1064,7 +1068,7 @@ try {
 <script>
 "use strict";
 
-/* Sonified 6×6 Sudoku — accessibility revision 2.10.
+/* Sonified 6×6 Sudoku — accessibility revision 2.12.
    Built-in speech is the default; automatic coordinate speech and edge messages are off by default.
    Escape switches board/control focus unless disabled.
    No dependencies or uploads. Other commands remain scoped to the focused grid.
@@ -1108,7 +1112,7 @@ let welcomeState = "pending", welcomeGestureAttempted = false;
 const sidebarTextElements = [];
 let liveTimer = null, internalFocus = false, lastInputKind = "", pendingPointerCell = null;
 const activeSounds = new Set();
-const booleanPreferences = ["alwaysCoordinates", "speakEmpty", "fullCellSpeech", "boxCue", "letterShortcuts", "escapeFocusSwitch", "edgeMessages", "welcomeOnStartup", "speakSidebarText"];
+const booleanPreferences = ["autoAnnounceNumbers", "repeatAnnounceNumbers", "alwaysCoordinates", "speakEmpty", "fullCellSpeech", "boxCue", "letterShortcuts", "escapeFocusSwitch", "edgeMessages", "welcomeOnStartup", "speakSidebarText"];
 const selectPreferences = {
   announcementMode: ["self","screenreader","off"], theme: ["system","light","dark"],
   focusMode: ["cell","container"], volumeTarget: ["main","instrument"],
@@ -1126,13 +1130,20 @@ function cellDetailedDescription(row=cursorRow,col=cursorCol) {
   return fixedCells[row][col] ? `${value}, fixed clue` : value ? `${value}, entered` : "empty";
 }
 function cellAriaLabel(row=cursorRow,col=cursorCol) { return `Row ${row+1}, column ${col+1}, ${cellDetailedDescription(row,col)}`; }
-function cellSpeechContents() {
+function cellSpeechContents({announceNumbers=true}={}) {
   const parts=[];
   if ($("alwaysCoordinates").checked) parts.push(coordinates());
   const value=board[cursorRow][cursorCol];
-  if (value) parts.push($("fullCellSpeech").checked ? cellDetailedDescription() : String(value));
-  else if ($("speakEmpty").checked) parts.push("empty");
+  if (value) {
+    if (announceNumbers) parts.push($("fullCellSpeech").checked ? cellDetailedDescription() : String(value));
+  } else if ($("speakEmpty").checked) parts.push("empty");
   return parts.join(". ");
+}
+// The two number-speech preferences apply only to navigation and single-cell replay.
+// Action feedback calls cellSpeechContents() directly and retains its original behaviour.
+function cellReadSpeech(requested=false) {
+  const setting=requested ? "repeatAnnounceNumbers":"autoAnnounceNumbers";
+  return cellSpeechContents({announceNumbers:$(setting).checked});
 }
 function cellEventSpeech(prefix) {
   const contents=cellSpeechContents();
@@ -1458,7 +1469,7 @@ function switchFocusWithAnnouncement(toGrid) {
   const skipPendingWelcome=()=> {
     if (pendingWelcome) { welcomeState="stopped"; welcomeNotice("Welcome skipped. Replay welcome is available."); }
   };
-  const detail=toGrid ? cellSpeechContents():controlSpeech(target);
+  const detail=toGrid ? cellReadSpeech():controlSpeech(target);
   // No goToBoard()/goToOptions() here: their focus announcements would replace
   // the required first words. Submit the prefix before moving DOM focus.
   scheduleSpeech(heading+(detail ? " "+detail:""),0,{
@@ -1630,7 +1641,7 @@ function focusBoard({pointerInitiated=false}={}) {
 function announceCurrentCell({requested=false,external=false}={}) {
   playCellCue();
   report(`${cellAriaLabel()}.`,{
-    live:requested || external, speech:cellSpeechContents(),
+    live:requested || external, speech:cellReadSpeech(requested),
     sensitive:true,hiddenText:requested ? "Selected cell repeated. Numbers are visually hidden." : "Cell selected. Numbers are visually hidden."
   });
 }
@@ -2072,6 +2083,12 @@ $("edgeMessages").addEventListener("change",()=> {
   // Clear any pending edge announcement immediately when the option changes.
   cancelPageSpeech(); clearLive(); savePreferences();
   report($("edgeMessages").checked ? "Edge messages on." : "Edge messages off. Boundary sound unchanged.",{live:false});
+});
+// Persist each choice independently; a deliberate setting change also clears stale speech.
+for (const id of ["autoAnnounceNumbers","repeatAnnounceNumbers"]) $(id).addEventListener("change",()=> {
+  cancelPageSpeech(); savePreferences();
+  const name=id==="autoAnnounceNumbers" ? "Automatic cell number announcements":"Space or R cell number announcements";
+  report(`${name} ${$(id).checked ? "on":"off"}. The other number announcement setting is unchanged.`,{live:false});
 });
 const toggleMessages={
   alwaysCoordinates:()=>`Self-voicing coordinates ${$("alwaysCoordinates").checked ? "on":"off"}. Screen-reader labels still include coordinates.`,
